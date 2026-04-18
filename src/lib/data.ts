@@ -10,7 +10,9 @@ export const CBC_SONGS = [
   'Great Things',
   'Only a Holy God',
   'I will trust my savior Jesus',
-  'Yet not I but through Chirst in me'
+  'Yet not I but through Chirst in me',
+  'Amazing Grace',
+  'Blessed Assurance'
 ]
 
 // Mock CCLI numbers and additional metadata
@@ -20,6 +22,7 @@ export const SONG_METADATA: Record<string, {
   tempo: 'slow' | 'medium' | 'fast'
   bandRequirements: string
   youtubeUrl?: string
+  isHymn?: boolean
 }> = {
   'King of Love': {
     ccli: '7123204',
@@ -98,6 +101,26 @@ export const SONG_METADATA: Record<string, {
     bandRequirements: 'Piano and vocals',
     youtubeUrl: 'https://www.youtube.com/watch?v=example11'
   }
+}
+
+// Add a common hymn fallback so the generator can suggest at least one hymn
+SONG_METADATA['Amazing Grace'] = {
+  ccli: undefined,
+  artist: 'Traditional',
+  tempo: 'slow',
+  bandRequirements: 'Hymn',
+  youtubeUrl: undefined,
+  // mark as hymn to allow client logic to ensure hymns are suggested
+  isHymn: true,
+}
+
+SONG_METADATA['Blessed Assurance'] = {
+  ccli: undefined,
+  artist: 'Fanny Crosby',
+  tempo: 'slow',
+  bandRequirements: 'Hymn',
+  youtubeUrl: undefined,
+  isHymn: true,
 }
 
 // User authentication (temporary - will be replaced with proper auth)

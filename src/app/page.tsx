@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { ChevronDown, ChevronUp, RefreshCw, BookOpen, Users, Music } from 'lucide-react'
 import { type Theme, type Activity, type Song } from '@/lib/types'
-import { USERS } from '@/lib/data'
+import { USERS, SONG_METADATA } from '@/lib/data'
 
 function getNextSundayText() {
   const today = new Date()
@@ -28,6 +28,7 @@ export default function Home() {
   const [userType, setUserType] = useState<'basic' | 'advanced' | null>(null)
   const [activities, setActivities] = useState<Activity[]>([])
   const [songs, setSongs] = useState<Song[]>([])
+  const [recommendedFamiliar, setRecommendedFamiliar] = useState<Song[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [regenerateCount, setRegenerateCount] = useState(0)
   const [themeFeedback, setThemeFeedback] = useState('')
@@ -47,8 +48,16 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ verse, context }),
       })
-      const data = await response.json()
-      setThemes(data.themes || [])
+        if (!response.ok) {
+          const text = await response.text()
+          console.error('Themes API error response:', response.status, text)
+          setThemes([])
+          setIsLoading(false)
+          return
+        }
+
+        const data = await response.json()
+        setThemes(data.themes || [])
       setStep('themes')
     } catch (error) {
       console.error('Error generating themes:', error)
@@ -74,6 +83,14 @@ export default function Home() {
           feedback: themeFeedback,
         }),
       })
+      if (!response.ok) {
+        const text = await response.text()
+        console.error('Themes regenerate API error response:', response.status, text)
+        setThemes([])
+        setIsLoading(false)
+        return
+      }
+
       const data = await response.json()
       setThemes(data.themes || [])
       setRegenerateCount(prev => prev + 1)
@@ -98,7 +115,9 @@ export default function Home() {
   }
 
   const handleLogin = () => {
-    if (USERS[loginUsername as keyof typeof USERS]?.password === loginPassword) {
+    const normalized = loginUsername.trim().toLowerCase()
+    const entry = Object.entries(USERS).find(([key]) => key.toLowerCase() === normalized)
+    if (entry && entry[1].password === loginPassword) {
       setUserType('advanced')
       setStep('verse')
     } else {
@@ -159,16 +178,63 @@ export default function Home() {
       const response = await fetch('/api/songs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ theme: selectedTheme.title }),
+        body: JSON.stringify({ theme: selectedTheme.title, userId: (loginUsername || 'CBC') }),
       })
       const data = await response.json()
-      setSongs(data.songs || [])
+      const rec = data.recommended || []
+      const rawAdditional = data.additional || []
+
+      const normalize = (s: any, index: number) => {
+        if (typeof s === 'string') {
+          const meta = SONG_METADATA[s]
+          return {
+            id: `song-${index + 1}`,
+            title: s,
+            artist: meta?.artist,
+            ccli: meta?.ccli,
+            tempo: (meta?.tempo as any) || 'medium',
+            bandRequirements: meta?.bandRequirements || 'Full band',
+            youtubeUrl: undefined,
+            isHymn: (meta as any)?.isHymn || false,
+          }
+        }
+
+        return {
+          id: s.id || `song-${index + 1}`,
+          title: s.title || s.Name || 'Untitled Song',
+          artist: s.artist || s.Artist || undefined,
+          ccli: s.ccli || s.CCLI || undefined,
+          tempo: s.tempo || 'medium',
+          bandRequirements: s.bandRequirements || 'Full band',
+          youtubeUrl: undefined,
+          isHymn: s.isHymn || false,
+        }
+      }
+
+      const normalizedRecommended = rec.map((s: any, i: number) => normalize(s, i))
+      setRecommendedFamiliar(normalizedRecommended)
+
+      const normalizedAdditional = rawAdditional.map((s: any, i: number) => normalize(s, i))
+      setSongs(normalizedAdditional)
     } catch (error) {
       console.error('Error generating songs:', error)
     } finally {
       setIsLoading(false)
     }
   }
+
+  // Auto-generate songs when navigating to the songs page for the selected theme
+  useEffect(() => {
+    if (step === 'songs' && selectedTheme) {
+      // Only trigger if we don't already have recommendations
+      if (!recommendedFamiliar || recommendedFamiliar.length === 0) {
+        // show searching message and generate
+        setIsLoading(true)
+        handleSongsGenerate().catch((e) => console.error('Auto song generation failed', e))
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, selectedTheme])
 
   const toggleActivityExpansion = (activityId: string) => {
     setActivities(prev => prev.map(activity =>
@@ -243,7 +309,7 @@ export default function Home() {
                   Additional Context (optional)
                 </label>
                 <textarea
-                  placeholder="e.g., Children's church, youth group, special event. You can write paragraphs here to provide more detailed context for better theme generation."
+                  placeholder="Add any helpful context such as a short sermon summary, key message, or specific goals you want the activities to support."
                   value={context}
                   onChange={(e) => setContext(e.target.value)}
                   className="w-full min-h-[120px] resize-y px-3 py-2 border border-slate-300 rounded-md shadow-sm bg-white text-slate-950 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -318,6 +384,15 @@ export default function Home() {
                 rows={4}
                 className="w-full resize-y rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-950 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
+              <div className="mt-3 text-right">
+                <Button
+                  onClick={handleRegenerateThemes}
+                  disabled={isLoading || !themeFeedback.trim()}
+                  className="border border-slate-300 bg-white text-slate-950 shadow-sm"
+                >
+                  {isLoading ? 'Applying feedback...' : 'Apply feedback & Regenerate'}
+                </Button>
+              </div>
             </div>
           )}
         </div>
@@ -658,7 +733,7 @@ export default function Home() {
                     <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-700">{songActivities.length} suggested</span>
                   </div>
                   <div className="space-y-4">
-                    {songActivities.length > 0 ? (
+                      {songActivities.length > 0 ? (
                       songActivities.map((activity) => (
                         <Card
                           key={activity.id}
@@ -744,6 +819,7 @@ export default function Home() {
                     )}
                   </div>
                 </section>
+                {/* 'Plan other stuff' button removed as requested */}
               </>
 
               {userType === 'advanced' && (
@@ -771,54 +847,102 @@ export default function Home() {
 
   if (step === 'songs') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      <div className="min-h-screen bg-white p-4 text-slate-950">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-slate-900 mb-2">Worship Songs</h1>
+            <h1 className="text-3xl font-bold text-slate-950 mb-2">Worship Songs</h1>
             <p className="text-slate-700">Theme: {selectedTheme?.title}</p>
           </div>
 
-          <div className="space-y-4">
-            {songs.map((song) => (
-              <Card key={song.id}>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-lg">{song.title}</CardTitle>
-                    <div className="flex gap-2">
-                      <Badge variant="outline">{song.tempo}</Badge>
-                      <Badge variant="secondary">{song.bandRequirements}</Badge>
-                    </div>
-                  </div>
-                  {song.artist && (
-                    <CardDescription>{song.artist}</CardDescription>
-                  )}
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center justify-between">
-                    <div className="flex gap-4 text-sm text-slate-700">
-                      {song.ccli && <span>CCLI: {song.ccli}</span>}
-                    </div>
-                    {song.youtubeUrl && (
-                      <Button variant="outline" size="sm" asChild>
-                        <a href={song.youtubeUrl} target="_blank" rel="noopener noreferrer">
-                          Watch on YouTube
-                        </a>
-                      </Button>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+          <div className="text-center mb-6">
+            <Button onClick={() => setStep('choice')} className="border border-slate-300 bg-white text-slate-950 shadow-sm">
+              Back to planning options
+            </Button>
           </div>
 
-          {songs.length === 0 && (
-            <div className="text-center py-12">
-              <p className="text-slate-700 mb-4">Ready to find some songs?</p>
-              <Button onClick={handleSongsGenerate} disabled={isLoading} className="border border-slate-300 shadow-sm text-slate-900">
-                {isLoading ? 'Generating Songs...' : 'Generate Song Suggestions'}
-              </Button>
-            </div>
-          )}
+          <div className="space-y-8">
+            {/* Show searching message while generating; otherwise render sections only when data exists */}
+            {isLoading && (
+              <div className="p-6 rounded-lg border border-slate-200 bg-white text-slate-800">
+                <h3 className="text-lg font-semibold">Searching for songs based on the theme</h3>
+                <p className="text-slate-600">This may take a few seconds — fetching the best matches for your selected theme.</p>
+              </div>
+            )}
+
+            {!isLoading && recommendedFamiliar && recommendedFamiliar.length > 0 && (
+              <section>
+                <h2 className="text-xl font-semibold text-slate-950 mb-4">Recommended Songs (based on theme)</h2>
+                <div className="space-y-4">
+                  {recommendedFamiliar.map((song, i) => {
+                    const meta = SONG_METADATA[song.title]
+                    return (
+                      <Card key={`familiar-${i}`} className="bg-white text-slate-950 border border-slate-200">
+                        <CardHeader>
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-lg text-slate-950">{song.title}</CardTitle>
+                            <div className="flex gap-2 items-center">
+                              { (song.isHymn || meta?.isHymn) && (
+                                <Badge variant="secondary" className="bg-amber-100 text-amber-800">Hymn</Badge>
+                              ) }
+                              <Badge variant="outline">{(song.tempo || meta?.tempo) || 'medium'}</Badge>
+                            </div>
+                          </div>
+                          {(song.artist || meta?.artist) && (
+                            <CardDescription className="text-slate-700">{song.artist || meta?.artist}</CardDescription>
+                          )}
+                        </CardHeader>
+                      </Card>
+                    )
+                  })}
+                </div>
+              </section>
+            )}
+
+            {!isLoading && songs && songs.length > 0 && (
+              <section>
+                <h2 className="text-xl font-semibold text-slate-950 mb-4">New song suggestions</h2>
+                <div className="space-y-4">
+                  {songs.map((song) => (
+                    <Card key={song.id} className="bg-white text-slate-950 border border-slate-200">
+                      <CardHeader>
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="text-lg text-slate-950">{song.title}</CardTitle>
+                          <div className="flex gap-2">
+                            <Badge variant="outline">{song.tempo}</Badge>
+                          </div>
+                        </div>
+                        {song.artist && (
+                          <CardDescription className="text-slate-700">{song.artist}</CardDescription>
+                        )}
+                      </CardHeader>
+                    </Card>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* After songs are shown, offer a button to plan other stuff */}
+            {!isLoading && ( (recommendedFamiliar && recommendedFamiliar.length > 0) || (songs && songs.length > 0) ) && (
+              <div className="pt-4">
+                <section className="rounded-3xl border border-slate-200 bg-slate-50 p-6 shadow-sm">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h2 className="text-xl font-semibold text-slate-950">Need children's activity suggestions?</h2>
+                      <p className="text-slate-600">Get children's church activity suggestions to complete your service plan.</p>
+                    </div>
+                    <Button
+                      onClick={() => setStep('activities')}
+                      className="border border-slate-300 bg-white text-slate-950 shadow-sm"
+                    >
+                      Children's Activities
+                    </Button>
+                  </div>
+                </section>
+              </div>
+            )}
+          </div>
+
+          {/* Removed manual generate prompt/button — songs auto-generate on page open */}
         </div>
       </div>
     )

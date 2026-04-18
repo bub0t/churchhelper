@@ -2,6 +2,7 @@ import OpenAI from 'openai'
 import { promises as fs } from 'fs'
 import { join } from 'path'
 import { Activity, Song, Theme } from './types'
+import { SONG_METADATA } from './data'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY ?? '',
@@ -14,10 +15,26 @@ async function getPromptTemplate(name: string): Promise<string> {
 
   const promptsPath = join(process.cwd(), 'src', 'lib', 'prompts.md')
   const file = await fs.readFile(promptsPath, 'utf8')
-  const regex = new RegExp(`<!-- PROMPT:${name} -->([\s\S]*?)<!-- END_PROMPT:${name} -->`, 'i')
-  const match = file.match(regex)
+  // try the strict form first, then a more flexible form that tolerates whitespace
+  const strict = new RegExp(`<!-- PROMPT:${name} -->([\\s\\S]*?)<!-- END_PROMPT:${name} -->`, 'i')
+  const flexible = new RegExp(`<!--\\s*PROMPT:${name}\\s*-->([\\s\\S]*?)<!--\\s*END_PROMPT:${name}\\s*-->`, 'i')
+  let match = file.match(strict) || file.match(flexible)
 
   if (!match) {
+    // fallback: if template is missing, provide a safe built-in default for known prompts
+    console.warn(`Prompt template not found in prompts.md: ${name}. Using builtin fallback.`)
+    const fallbacks: Record<string, string> = {
+      theme: `You are a church volunteer creating church planning themes. Based on the Bible verse "{{verse}}"{{contextSection}}{{feedbackSection}}, prioritize the provided context and make sure each suggested theme clearly relates to it. Generate 3 relevant themes for church activities or worship planning. Each theme should have a title and brief description. Return as JSON array with id, title, and description fields.`,
+      activities: `Generate 2-3 children's Christian church activities based on theme "{{theme}}" from verse "{{verse}}", or directly from "{{verse}}". Group size: {{groupSize}}, Age range: {{ageRange}}, Weather: {{weather}}.\n\nInclude:\n- 2-3 games\n- 2-3 crafts\n- 1 children's song suggestion for the children's activity time (not the congregational worship set)\n\nFor each activity, include exactly these fields:\n- id\n- title\n- type (game, craft, or song)\n- activityLevel (laid-back, moderate, or active)\n- description\n- themeRelation\n- materials (array)\n- questions (array of discussion questions appropriate for the age group)\n\nUse actual children's worship song examples where possible, such as songs from Psalty, Cedarmont Kids, Seeds Family Worship, or classic children's praise music.\nMake sure games and discussion questions are age-appropriate for {{ageRange}} in terms of complexity, and are related to the {{theme}} and/or {{verse}}.\nConsider weather conditions for indoor/outdoor suggestions. Return as JSON array.`,
+      songs: `Based on theme "{{theme}}", select 4-5 songs from this church's repertoire: {{churchSongs}}. Also suggest 1 additional song that would fit this church's style.\n\nFor each song, include:\n- Title\n- Artist (if known)\n- CCLI number (if available)\n- Tempo (slow, medium, fast)\n- Band requirements (e.g., "Piano only", "Full band", "Acoustic guitar")\n- YouTube URL (if you know one)\n\nReturn as JSON array.`,
+    }
+
+    const fb = fallbacks[name]
+    if (fb) {
+      promptCache.set(name, fb)
+      return fb
+    }
+
     throw new Error(`Prompt template not found: ${name}`)
   }
 
@@ -87,26 +104,6 @@ export async function aiGenerateActivities(
     .replace(/{{groupSize}}/g, String(groupSize))
     .replace(/{{ageRange}}/g, ageRange)
     .replace(/{{weather}}/g, weather)
-
-  try {
-- 2-3 games
-- 2-3 crafts
-- 1 children's song suggestion for the children\'s activity time (not the congregational worship set)
-
-For each activity, include exactly these fields:
-- id
-- title
-- type (game, craft, or song)
-- activityLevel (laid-back, moderate, or active)
-- description
-- themeRelation
-- materials (array)
-- questions (array of discussion questions appropriate for the age group)
-
-Use actual children's worship song examples where possible, such as songs from Psalty, Cedarmont Kids, Seeds Family Worship, or classic children's praise music.
-Make sure games and discussion questions are age-appropriate for ${ageRange}, with simple, theme-related questions.
-Consider weather conditions for indoor/outdoor suggestions. Return as JSON array.`
-
   try {
     const raw = await createOpenAIResponse(prompt)
     const activities = safeParseJson<Activity[]>(raw)
@@ -177,7 +174,7 @@ Consider weather conditions for indoor/outdoor suggestions. Return as JSON array
 }
 
 
-export async function aiGenerateSongs(theme: string, churchSongs: string[]): Promise<Song[]> {
+export async function aiGenerateSongs(theme: string, churchSongs: string[]): Promise<{ recommended: Song[]; additional: Song[] }> {
   const template = await getPromptTemplate('songs')
   const prompt = template
     .replace(/{{theme}}/g, theme)
@@ -185,15 +182,41 @@ export async function aiGenerateSongs(theme: string, churchSongs: string[]): Pro
 
   try {
     const raw = await createOpenAIResponse(prompt)
-    const songs = safeParseJson<Song[]>(raw)
-    if (songs?.length) {
-      return songs.map((song, index) => ({ ...song, id: song.id || `song-${index + 1}` }))
+    // Expecting an object with { recommended: [...], additional: [...] }
+    const parsed = safeParseJson<{ recommended: Song[]; additional: Song[] }>(raw)
+    if (parsed && (parsed.recommended?.length || parsed.additional?.length)) {
+      const recommended = (parsed.recommended || []).map((s, i) => ({ ...s, id: s.id || `recommended-${i + 1}` }))
+      const additional = (parsed.additional || []).map((s, i) => ({ ...s, id: s.id || `additional-${i + 1}` }))
+      return { recommended, additional }
     }
   } catch (error) {
     console.error('OpenAI songs error:', error)
   }
 
-  return [
-    { id: 'song-1', title: 'King of Love', tempo: 'medium', bandRequirements: 'Full band', ccli: '7123204' },
+  // Fallback: pick first 4 from churchSongs and suggest Amazing Grace
+  const recommendedFallback = churchSongs.slice(0, 4).map((t, i) => {
+    const meta = (SONG_METADATA as any)[t]
+    return {
+      id: `rec-fb-${i + 1}`,
+      title: t,
+      artist: meta?.artist,
+      ccli: meta?.ccli,
+      tempo: meta?.tempo || 'medium',
+      bandRequirements: meta?.bandRequirements || 'Full band',
+      reason: `Fits the theme ${theme} well from the church repertoire.`,
+    } as Song
+  })
+
+  const additionalFallback = [
+    {
+      id: 'add-fb-1',
+      title: 'Amazing Grace',
+      artist: 'Traditional',
+      tempo: 'slow',
+      bandRequirements: 'Hymn',
+      reason: 'Classic hymn that supports many themes of grace and love.',
+    } as Song,
   ]
+
+  return { recommended: recommendedFallback, additional: additionalFallback }
 }

@@ -24,4 +24,5 @@ export interface Song {
   tempo: 'slow' | 'medium' | 'fast'
   bandRequirements: string
   youtubeUrl?: string
+  reason?: string
 }
