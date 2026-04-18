@@ -2,7 +2,13 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --input: #ffffff;
+  --border: #cbd5e1;
+  --ring: #3b82f6;
+  --muted-foreground: #64748b;
 }
 
 @theme inline {
@@ -14,8 +20,14 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #ffffff;
+    --foreground: #0f172a;
+    --card: #ffffff;
+    --card-foreground: #0f172a;
+    --input: #ffffff;
+    --border: #cbd5e1;
+    --ring: #3b82f6;
+    --muted-foreground: #64748b;
   }
 }
 
