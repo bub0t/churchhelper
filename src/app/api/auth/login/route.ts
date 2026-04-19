@@ -5,7 +5,9 @@ import { USERS } from '@/lib/data'
 
 export async function POST(request: Request) {
   try {
-    const { id, password } = await request.json().catch(() => ({}))
+    const raw = await request.json().catch(() => ({}))
+    const id: string = typeof raw.id === 'string' ? raw.id.trim().toLowerCase() : ''
+    const password: string = raw.password || ''
     if (!id || !password) return NextResponse.json({ ok: false }, { status: 400 })
 
     // If Supabase is configured, check the `churches` table for the stored hash
@@ -28,7 +30,7 @@ export async function POST(request: Request) {
     // Demo fallback: if an explicit DEMO_PASSWORD is set via env, allow that credential.
     // Otherwise, allow a local `USERS` fallback (for developer convenience) when Supabase isn't configured.
     const demoPassword = process.env.DEMO_PASSWORD || process.env.DEV_DEMO_PASSWORD
-    const demoUser = process.env.DEMO_USER || 'CBC'
+    const demoUser = (process.env.DEMO_USER || 'CBC').toLowerCase()
     if (demoPassword) {
       if (password === demoPassword && id === demoUser) {
         console.warn('Authenticated via DEMO_PASSWORD environment (insecure; remove for production).')
@@ -39,7 +41,7 @@ export async function POST(request: Request) {
 
     // Local USERS fallback (only when Supabase not configured). This checks the in-repo demo users.
     try {
-      const local = (USERS as any)[id]
+      const local = (USERS as any)[id] || (USERS as any)[id.toUpperCase()] || (USERS as any)[id.toLowerCase()]
       if (local && local.password && password === local.password) {
         console.warn('Authenticated via local USERS fallback (insecure; remove before production).')
         return NextResponse.json({ ok: true })

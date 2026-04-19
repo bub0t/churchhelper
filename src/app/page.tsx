@@ -28,7 +28,7 @@ export default function Home() {
   const [verse2, setVerse2] = useState('')
   const [verse3, setVerse3] = useState('')
   const [verses, setVerses] = useState<string[]>([])
-  const [versesText, setVersesText] = useState<Array<{ text: string; bible?: string }>>([])
+  const [versesText, setVersesText] = useState<Array<{ text: string; bible?: string; notFound?: boolean }>>([])
 
   const [context, setContext] = useState('')
   const [themes, setThemes] = useState<Theme[]>([])
@@ -66,7 +66,7 @@ export default function Home() {
       })
       if (res.ok) {
         const json = await res.json()
-        const texts = Array.isArray(json.verses) ? json.verses.map((v: any) => ({ text: v.text || v.ref || '', bible: v.bible })) : []
+        const texts = Array.isArray(json.verses) ? json.verses.map((v: any) => ({ text: v.text || '', bible: v.bible, notFound: v.notFound || false })) : []
         setVersesText(texts)
       } else {
         setVersesText(collected.map((c) => ({ text: c })))
@@ -83,14 +83,25 @@ export default function Home() {
     setStep('themeContext')
   }
 
+  const handleStartNewVerses = () => {
+    setVerse1('')
+    setVerse2('')
+    setVerse3('')
+    setVerses([])
+    setVersesText([])
+    setStep('verse')
+  }
+
   const handleThemeContextSubmit = async () => {
     if (!verses || verses.length === 0) return
     setIsLoading(true)
+    const validVerses = verses.filter((_, i) => !versesText[i]?.notFound)
+    if (validVerses.length === 0) return
     try {
       const response = await fetch('/api/themes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ verses, context, feedback: themeFeedback }),
+        body: JSON.stringify({ verses: validVerses, context, feedback: themeFeedback }),
       })
       if (!response.ok) {
         const text = await response.text()
@@ -117,11 +128,12 @@ export default function Home() {
   const handleRegenerateThemes = async () => {
     setIsLoading(true)
     try {
+      const validVerses = verses.filter((_, i) => !versesText[i]?.notFound)
       const response = await fetch('/api/themes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          verses,
+          verses: validVerses,
           context: context + ' (regenerated)',
           feedback: themeFeedback,
         }),
@@ -183,9 +195,10 @@ export default function Home() {
 
   const handleLogin = async () => {
     try {
+      const normalizedUsername = loginUsername.trim().toLowerCase()
       // Try Supabase Auth sign-in first
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: loginUsername.trim(),
+        email: normalizedUsername,
         password: loginPassword,
       })
 
@@ -195,7 +208,7 @@ export default function Home() {
         const res = await fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: loginUsername.trim(), password: loginPassword }),
+          body: JSON.stringify({ id: normalizedUsername, password: loginPassword }),
         })
         if (res.ok) {
           const json = await res.json()
@@ -523,7 +536,10 @@ export default function Home() {
                             <div className="font-semibold text-slate-800">{v}</div>
                             {label ? <div className="text-xs text-slate-500">{label}</div> : null}
                           </div>
-                          <div className="text-slate-700 whitespace-pre-wrap text-sm mt-2">{vt?.text || 'Passage not available.'}</div>
+                          {vt?.notFound
+                            ? <div className="text-red-500 text-sm mt-2 italic">No scripture found for this reference.</div>
+                            : <div className="text-slate-700 whitespace-pre-wrap text-sm mt-2">{vt?.text || 'Passage not available.'}</div>
+                          }
                         </div>
                       )
                     })}
@@ -1145,6 +1161,9 @@ export default function Home() {
                   <Button onClick={() => handleChoiceSelect('youthDiscussion')} className="border border-slate-300 bg-white text-slate-950 shadow-sm">
                     Youth Group Discussion
                   </Button>
+                  <Button onClick={handleStartNewVerses} className="border border-slate-300 bg-white text-slate-950 shadow-sm">
+                    New Bible Verses
+                  </Button>
                 </div>
               </div>
             </div>
@@ -1225,6 +1244,9 @@ export default function Home() {
                       Worship Songs
                     </Button>
                   )}
+                  <Button onClick={handleStartNewVerses} className="border border-slate-300 bg-white text-slate-950 shadow-sm">
+                    New Bible Verses
+                  </Button>
                 </div>
               </div>
             </div>
@@ -1327,6 +1349,9 @@ export default function Home() {
                     </Button>
                     <Button onClick={() => handleChoiceSelect('youthDiscussion')} className="border border-slate-300 bg-white text-slate-950 shadow-sm">
                       Youth Group Discussion
+                    </Button>
+                    <Button onClick={handleStartNewVerses} className="border border-slate-300 bg-white text-slate-950 shadow-sm">
+                      New Bible Verses
                     </Button>
                   </div>
                 </div>
