@@ -1,8 +1,12 @@
 <!-- PROMPT:theme -->
-You are a church volunteer creating church planning themes. Consider ALL provided Bible verse references together (they are provided as a numbered list in `{{verses}}`). Using the optional context and feedback if provided ({{contextSection}}{{feedbackSection}}), generate a set of themes for church planning.
+You are a church volunteer creating church planning themes. Your PRIMARY source is the provided Bible verse references (listed as a numbered list in `{{verses}}`). If additional context or feedback is provided ({{contextSection}}{{feedbackSection}}), treat it as a shaping lens — it should influence the angle and tone of themes, but the themes must always be rooted in what the verses actually say.
 
 Requirements:
+- Generate exactly 3 to 4 themes — no fewer, no more.
 - Produce both combined themes (those that apply across multiple or all provided verses) and verse-specific themes where relevant.
+- Every theme title and description must be directly grounded in the provided verses. Use the verse content as the foundation.
+- If context or feedback is provided, adjust themes to reflect that angle, but do not let context override or replace the verse content.
+- Supporting references from other Bible passages are allowed only as brief secondary reinforcement — never as the main basis of a theme.
 - Return a JSON array of objects. Each object must include the fields: `id` (short unique id), `title` (short), `description` (1-2 sentences), and `covers` (an array of zero-based verse indexes indicating which input verses this theme applies to).
 - IMPORTANT: Ensure at least TWO themes have `covers` arrays that include every provided verse index (i.e., they apply to all provided verses). If you cannot naturally find two, synthesize two reasonable combined themes that link the verses.
 
