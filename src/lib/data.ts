@@ -152,10 +152,12 @@ export function autoDetectHymn(title: string): boolean {
 }
 
 // User authentication (temporary - will be replaced with proper auth)
-export const USERS = {
-  'CBC': {
-    password: 'John3:16',
+// Demo users (no passwords stored here). For production, users and passwords
+// should be stored in the database and validated via server-side auth.
+export const USERS: Record<string, { songs: string[]; location?: string; password?: string }> = {
+  CBC: {
     songs: CBC_SONGS,
-    location: 'Canterbury, Victoria, Australia'
-  }
+    location: 'Canterbury, Victoria, Australia',
+    password: 'John3:16',
+  },
 }

@@ -66,13 +66,12 @@ export default function AddSongsPage() {
           </CardContent>
         </Card>
 
-        <section className="rounded-3xl border border-slate-200 bg-slate-50 p-6 shadow-sm">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-slate-950">Need children's activity suggestions?</h2>
-              <p className="text-slate-600">Get children's church activity suggestions to complete your service plan.</p>
-            </div>
-            <Button onClick={() => router.push('/')} className="border border-slate-300 bg-white text-slate-950 shadow-sm">Children's Activities</Button>
+        <section className="rounded-3xl border border-slate-200 bg-slate-50 p-6 shadow-sm space-y-4">
+          <h2 className="text-lg font-semibold text-slate-950">Do you need further help with any of the following?</h2>
+          <div className="flex flex-wrap gap-3">
+            <Button onClick={() => router.push('/')} className="border border-slate-300 bg-white text-slate-950 shadow-sm">Children&apos;s Activities</Button>
+            <Button onClick={() => router.push('/')} className="border border-slate-300 bg-white text-slate-950 shadow-sm">Worship Songs</Button>
+            <Button onClick={() => router.push('/')} className="border border-slate-300 bg-white text-slate-950 shadow-sm">Youth Group Discussion</Button>
           </div>
         </section>
       </div>

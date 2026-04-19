@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     // Persist updated church song list to Supabase if available
     if (supabase) {
       try {
-        const { error } = await supabase.from('churches').upsert({ id: userId, password: user.password, location: user.location, songs: user.songs })
+        const { error } = await supabase.from('churches').upsert({ id: userId, location: user.location, songs: user.songs })
         if (error) console.error('Failed to upsert churches row:', error)
       } catch (err) {
         console.error('Supabase upsert failed:', err)

@@ -68,17 +68,67 @@ async function createOpenAIResponse(prompt: string): Promise<string> {
   return response.output_text || ''
 }
 
-export async function aiGenerateThemes(verse: string, context?: string, feedback?: string): Promise<Theme[]> {
+export async function aiGenerateThemes(opts: { verses: string[]; context?: string; feedback?: string }): Promise<Theme[]> {
+  const { verses, context, feedback } = opts
   const template = await getPromptTemplate('theme')
+  const versesList = (verses || []).map((v, i) => `${i + 1}. ${v}`).join('\n')
   const prompt = template
-    .replace(/{{verse}}/g, verse)
-    .replace(/{{contextSection}}/g, context ? ` and context: "${context}"` : '')
-    .replace(/{{feedbackSection}}/g, feedback ? ` Also consider this feedback: "${feedback}".` : '')
+    .replace(/{{verses}}/g, versesList)
+    .replace(/{{versesInline}}/g, (verses || []).join(' | '))
+    .replace(/{{contextSection}}/g, context ? ` Context: "${context}".` : '')
+    .replace(/{{feedbackSection}}/g, feedback ? ` Feedback: "${feedback}".` : '')
 
   try {
     const raw = await createOpenAIResponse(prompt)
-    const themes = safeParseJson<Theme[]>(raw)
-    if (themes?.length) return themes
+    let themes = safeParseJson<Theme[]>(raw)
+
+    const allIndexes = (verses || []).map((_, i) => i)
+    const countCommon = (arr: Theme[] | null | undefined) => (arr || []).filter(t => Array.isArray((t as any).covers) && allIndexes.every(idx => (t as any).covers.includes(idx))).length
+
+    if (themes && countCommon(themes) >= 2) return themes
+
+    // Retry once with a stronger instruction if constraint not met
+    const retryPrompt = prompt + '\n\nIMPORTANT: If you did not produce at least two themes that apply to every provided verse, produce additional themes so there are at least two that cover all verses. Return only parseable JSON.'
+    try {
+      const raw2 = await createOpenAIResponse(retryPrompt)
+      const themes2 = safeParseJson<Theme[]>(raw2)
+      if (themes2 && countCommon(themes2) >= 2) return themes2
+      if (themes2 && themes2.length > 0) themes = themes2
+    } catch (e) {
+      console.error('OpenAI themes retry error:', e)
+    }
+
+    // As a last resort, synthesize two combined themes that cover all verses
+    const synthesizeFallback = () => {
+      const combinedA: Theme = {
+        id: 'synth-1',
+        title: 'Combined Theme: Core Hope',
+        description: 'A unifying theme that draws together the central hope and promise shared across the provided passages.',
+      }
+      const combinedB: Theme = {
+        id: 'synth-2',
+        title: 'Combined Theme: God\'s Faithfulness',
+        description: 'A combined theme highlighting God\'s faithfulness and provision that links the selected verses.',
+      }
+      ;(combinedA as any).covers = allIndexes
+      ;(combinedB as any).covers = allIndexes
+      return [combinedA, combinedB]
+    }
+
+    const result: Theme[] = []
+    if (themes && themes.length) {
+      // ensure parsed themes have covers arrays where possible
+      for (const t of themes) {
+        if (!(t as any).covers) (t as any).covers = (t as any).covers || []
+        result.push(t)
+      }
+    }
+
+    const haveCommon = result.filter(t => Array.isArray((t as any).covers) && allIndexes.every(idx => (t as any).covers.includes(idx)))
+    if (haveCommon.length >= 2) return result
+
+    // attach synthesized themes
+    return [...result, ...synthesizeFallback()]
   } catch (error) {
     console.error('OpenAI themes error:', error)
   }
@@ -219,4 +269,39 @@ export async function aiGenerateSongs(theme: string, churchSongs: string[]): Pro
   ]
 
   return { recommended: recommendedFallback, additional: additionalFallback }
+}
+
+export async function aiGenerateDiscussion(theme: string, verses: string[]): Promise<string[]> {
+  const verseList = verses.length > 0 ? verses.join(', ') : 'the theme'
+  const prompt = `Generate exactly 5 discussion questions about the theme "${theme}" based on ${verseList}.
+The questions are for a youth group of secondary school students aged 12 to 18 years old.
+Make the questions thought-provoking, age-appropriate, and relevant to their everyday lives as teenagers.
+Mix question types: some personal/reflective, some theological, some practical/application-focused.
+Return ONLY a valid JSON array of 5 strings, e.g. ["Question 1?", "Question 2?", ...]`
+
+  try {
+    const response = await openai.responses.create({
+      model: 'gpt-4.1-mini',
+      input: prompt,
+    })
+    const text = response.output_text?.trim() || ''
+    const match = text.match(/\[[\s\S]*\]/)
+    if (match) {
+      const parsed = JSON.parse(match[0])
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((q: unknown) => String(q))
+      }
+    }
+  } catch (e) {
+    console.error('aiGenerateDiscussion error:', e)
+  }
+
+  // Fallback questions
+  return [
+    `How does the theme "${theme}" connect to challenges you face in your own life?`,
+    `What does it mean to live out the message of ${verseList} as a young person today?`,
+    `Is there anything in this theme that surprises or challenges you? Why?`,
+    `How could you share this message with someone your age who doesn't go to church?`,
+    `What is one practical thing you could do this week that reflects this theme?`,
+  ]
 }

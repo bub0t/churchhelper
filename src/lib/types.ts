@@ -2,6 +2,8 @@ export interface Theme {
   id: string
   title: string
   description: string
+  covers?: number[]
+  common?: boolean
 }
 
 export interface Activity {

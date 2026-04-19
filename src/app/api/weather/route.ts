@@ -13,8 +13,8 @@ export async function GET(request: Request) {
       if (!response.ok) throw new Error('Weather API error')
       const data = await response.json()
       const description = data.weather?.[0]?.description || 'mild conditions'
-      const temp = data.main?.temp
-      return NextResponse.json({ weather: `${description}, ${temp}°C` })
+      const temp = data.main?.temp != null ? Math.round(data.main.temp) : null
+      return NextResponse.json({ weather: temp != null ? `${description}, ${temp}°C` : description })
     } catch (error) {
       console.error('Weather API error:', error)
     }
