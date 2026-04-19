@@ -6,7 +6,7 @@ import supabase from '@/lib/supabase.server'
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const userId = typeof body?.userId === 'string' ? body.userId : 'CBC'
+    const userId = typeof body?.userId === 'string' ? body.userId.toLowerCase() : 'cbc'
     const raw = Array.isArray(body?.songs) ? body.songs : typeof body?.songs === 'string' ? body.songs.split('\n') : []
 
     const titles = raw.map((s: string) => s.trim()).filter(Boolean)
@@ -14,12 +14,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ added: 0, existing: 0, message: 'No songs provided' })
     }
 
-    const user = USERS[userId as keyof typeof USERS]
-    if (!user) {
-      return NextResponse.json({ added: 0, existing: titles.length, message: 'Unknown user' }, { status: 400 })
+    // Determine existing songs for this church
+    let existingTitles: string[] = []
+    if (supabase) {
+      // Fetch from church_songs → songs join
+      const { data: rows } = await supabase
+        .from('church_songs')
+        .select('songs(title)')
+        .eq('church_id', userId)
+      existingTitles = (rows || []).map((r: any) => r.songs?.title).filter(Boolean)
+    } else {
+      // Fallback to local USERS
+      const user = USERS[userId.toUpperCase() as keyof typeof USERS] || USERS['CBC']
+      existingTitles = user?.songs || []
     }
 
-    const existingSet = new Set((user.songs || []).map((t: string) => t.toLowerCase()))
+    const existingSet = new Set(existingTitles.map((t: string) => t.toLowerCase()))
     const toAdd: string[] = []
     let already = 0
     for (const t of titles) {
@@ -27,34 +37,22 @@ export async function POST(request: Request) {
         already += 1
       } else {
         toAdd.push(t)
-        user.songs.push(t)
-        // ensure metadata exists
+        // ensure metadata exists locally for embedding seed
         if (!(SONG_METADATA as any)[t]) {
           ;(SONG_METADATA as any)[t] = { tempo: 'medium', bandRequirements: 'Full band' }
         }
-        // auto-detect hymn flag
         try {
           ;(SONG_METADATA as any)[t].isHymn = autoDetectHymn(t)
         } catch {}
       }
     }
 
-    // Build embeddings for the newly added songs (Supabase if configured, otherwise local file)
+    // Build embeddings for new songs (upserts into songs pool + church_songs link)
     if (toAdd.length > 0) {
       try {
         await ensureSongEmbeddings(userId, toAdd)
       } catch (err) {
         console.error('Failed to ensure embeddings for new songs:', err)
-      }
-    }
-
-    // Persist updated church song list to Supabase if available
-    if (supabase) {
-      try {
-        const { error } = await supabase.from('churches').upsert({ id: userId, location: user.location, songs: user.songs })
-        if (error) console.error('Failed to upsert churches row:', error)
-      } catch (err) {
-        console.error('Supabase upsert failed:', err)
       }
     }
 

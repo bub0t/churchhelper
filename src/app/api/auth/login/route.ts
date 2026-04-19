@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import supabase from '@/lib/supabase.server'
 import bcrypt from 'bcryptjs'
-import { USERS } from '@/lib/data'
+
+const SUPERADMIN_USERNAME = 'superadmin'
 
 export async function POST(request: Request) {
   try {
@@ -10,44 +11,53 @@ export async function POST(request: Request) {
     const password: string = raw.password || ''
     if (!id || !password) return NextResponse.json({ ok: false }, { status: 400 })
 
-    // If Supabase is configured, check the `churches` table for the stored hash
+    // Superadmin: env-only, never stored in DB
+    if (id === SUPERADMIN_USERNAME) {
+      const superPassword = process.env.SUPERADMIN_PASSWORD
+      if (!superPassword) return NextResponse.json({ ok: false }, { status: 401 })
+      if (password !== superPassword) return NextResponse.json({ ok: false }, { status: 401 })
+      return NextResponse.json({ ok: true, role: 'superadmin' })
+    }
+
+    // Regular users: check `users` table
     if (supabase) {
-      const { data, error } = await supabase.from('churches').select('password').eq('id', id).maybeSingle()
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, password_hash, church_id, status')
+        .eq('id', id)
+        .maybeSingle()
+
       if (error) {
-        console.error('/api/auth/login supabase select error:', error)
+        console.error('/api/auth/login supabase error:', error)
         return NextResponse.json({ ok: false }, { status: 500 })
       }
 
-      const stored = (data as any)?.password
-      if (!stored) return NextResponse.json({ ok: false }, { status: 401 })
+      if (data) {
+        if (data.status !== 'approved') {
+          return NextResponse.json({ ok: false, reason: 'pending' }, { status: 403 })
+        }
+        const match = await bcrypt.compare(password, data.password_hash)
+        if (!match) return NextResponse.json({ ok: false }, { status: 401 })
+        return NextResponse.json({ ok: true, role: 'user', churchId: data.church_id })
+      }
 
-      const match = await bcrypt.compare(password, stored)
-      if (!match) return NextResponse.json({ ok: false }, { status: 401 })
-
-      return NextResponse.json({ ok: true })
+      // No user found — fall through to legacy church fallback below
     }
 
-    // Demo fallback: if an explicit DEMO_PASSWORD is set via env, allow that credential.
-    // Otherwise, allow a local `USERS` fallback (for developer convenience) when Supabase isn't configured.
-    const demoPassword = process.env.DEMO_PASSWORD || process.env.DEV_DEMO_PASSWORD
-    const demoUser = (process.env.DEMO_USER || 'CBC').toLowerCase()
-    if (demoPassword) {
-      if (password === demoPassword && id === demoUser) {
-        console.warn('Authenticated via DEMO_PASSWORD environment (insecure; remove for production).')
-        return NextResponse.json({ ok: true })
-      }
-      return NextResponse.json({ ok: false }, { status: 401 })
-    }
+    // Legacy fallback: check `churches` table (for existing CBC account before users table is seeded)
+    if (supabase) {
+      const { data: church } = await supabase
+        .from('churches')
+        .select('password')
+        .eq('id', id)
+        .maybeSingle()
 
-    // Local USERS fallback (only when Supabase not configured). This checks the in-repo demo users.
-    try {
-      const local = (USERS as any)[id] || (USERS as any)[id.toUpperCase()] || (USERS as any)[id.toLowerCase()]
-      if (local && local.password && password === local.password) {
-        console.warn('Authenticated via local USERS fallback (insecure; remove before production).')
-        return NextResponse.json({ ok: true })
+      const stored = (church as any)?.password
+      if (stored) {
+        const match = await bcrypt.compare(password, stored)
+        if (!match) return NextResponse.json({ ok: false }, { status: 401 })
+        return NextResponse.json({ ok: true, role: 'user', churchId: id })
       }
-    } catch (e) {
-      // ignore and continue to fail below
     }
 
     return NextResponse.json({ ok: false }, { status: 401 })

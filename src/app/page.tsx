@@ -21,7 +21,7 @@ function getNextSundayText() {
 }
 
 export default function Home() {
-  const [step, setStep] = useState<'disclaimer' | 'login' | 'verse' | 'verseReview' | 'themeContext' | 'themes' | 'choice' | 'activities' | 'songs' | 'youthDiscussion'>('disclaimer')
+  const [step, setStep] = useState<'disclaimer' | 'login' | 'register' | 'register-church' | 'forgot-password' | 'admin' | 'verse' | 'verseReview' | 'themeContext' | 'themes' | 'choice' | 'activities' | 'songs' | 'youthDiscussion'>('disclaimer')
 
   // multi-verse inputs + aggregated verses array
   const [verse1, setVerse1] = useState('')
@@ -48,6 +48,28 @@ export default function Home() {
   const weatherFetchedRef = useRef(false)
   const [loginUsername, setLoginUsername] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
+  const [loginChurchId, setLoginChurchId] = useState('')
+
+  // Registration state
+  const [regChurchId, setRegChurchId] = useState('')
+  const [regChurchName, setRegChurchName] = useState('')
+  const [regUsername, setRegUsername] = useState('')
+  const [regEmail, setRegEmail] = useState('')
+  const [regPassword, setRegPassword] = useState('')
+  const [regPasswordConfirm, setRegPasswordConfirm] = useState('')
+  const [regChurchLocation, setRegChurchLocation] = useState('')
+  const [regError, setRegError] = useState('')
+  const [availableChurches, setAvailableChurches] = useState<{id: string, name: string, location: string}[]>([])
+
+  // Forgot password state
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [forgotSent, setForgotSent] = useState(false)
+
+  // Admin (superadmin) state
+  const [adminPassword, setAdminPassword] = useState('')
+  const [pendingChurches, setPendingChurches] = useState<any[]>([])
+  const [adminSlugs, setAdminSlugs] = useState<Record<string, string>>({})
+  const [adminMessage, setAdminMessage] = useState('')
   const [groupSize, setGroupSize] = useState('')
   const [ageRange, setAgeRange] = useState('5-11')
 
@@ -196,45 +218,95 @@ export default function Home() {
   const handleLogin = async () => {
     try {
       const normalizedUsername = loginUsername.trim().toLowerCase()
-      // Try Supabase Auth sign-in first
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: normalizedUsername,
-        password: loginPassword,
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: normalizedUsername, password: loginPassword }),
       })
+      const json = await res.json()
 
-      if (error) {
-        console.warn('Supabase sign-in error', error)
-        // Fallback to server-side route (handles DB-hashed password or dev fallback)
-        const res = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: normalizedUsername, password: loginPassword }),
-        })
-        if (res.ok) {
-          const json = await res.json()
-          if (json.ok) {
-            setUserType('advanced')
-            setStep('verse')
-            return
-          }
+      if (!res.ok || !json.ok) {
+        if (res.status === 403 && json.reason === 'pending') {
+          alert('Your registration is pending admin approval. You will be notified when approved.')
+        } else {
+          alert('Invalid credentials')
         }
-        alert('Invalid credentials')
         return
       }
 
-      // On success, set loginUsername to the authenticated user's id so downstream routes can reference it
-      const user = (data as any)?.user
-      if (user) {
-        setLoginUsername(user.id || user.email || loginUsername.trim())
-        setUserType('advanced')
-        setStep('verse')
+      if (json.role === 'superadmin') {
+        setAdminPassword(loginPassword)
+        setLoginPassword('')
+        setLoginUsername('')
+        await loadPendingChurches(loginPassword)
+        setStep('admin')
         return
       }
 
-      alert('Login failed')
+      setLoginUsername(normalizedUsername)
+      setLoginChurchId(json.churchId || normalizedUsername)
+      setUserType('advanced')
+      setStep('verse')
     } catch (e) {
       console.error('Login error', e)
       alert('Login failed')
+    }
+  }
+
+  const loadPendingChurches = async (password: string) => {
+    try {
+      const res = await fetch(`/api/admin/pending-churches?password=${encodeURIComponent(password)}`)
+      const json = await res.json()
+      if (json.ok) {
+        setPendingChurches(json.churches || [])
+        const slugs: Record<string, string> = {}
+        for (const c of json.churches || []) slugs[c.id] = c.id
+        setAdminSlugs(slugs)
+      }
+    } catch (e) {
+      console.error('Failed to load pending churches', e)
+    }
+  }
+
+  const handleApproveChurch = async (pendingId: string) => {
+    const approvedId = (adminSlugs[pendingId] || pendingId).trim().toLowerCase()
+    setAdminMessage('')
+    try {
+      const res = await fetch('/api/admin/approve-church', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: adminPassword, pendingId, approvedId }),
+      })
+      const json = await res.json()
+      if (json.ok) {
+        setPendingChurches(prev => prev.filter(c => c.id !== pendingId))
+        setAdminMessage(`Approved: ${approvedId}`)
+      } else {
+        setAdminMessage(`Error: ${json.error}`)
+      }
+    } catch (e) {
+      setAdminMessage('Failed to approve church')
+    }
+  }
+
+  const handleRejectChurch = async (churchId: string) => {
+    if (!confirm(`Reject and delete "${churchId}" and all its pending users?`)) return
+    setAdminMessage('')
+    try {
+      const res = await fetch('/api/admin/reject-church', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: adminPassword, churchId }),
+      })
+      const json = await res.json()
+      if (json.ok) {
+        setPendingChurches(prev => prev.filter(c => c.id !== churchId))
+        setAdminMessage(`Rejected: ${churchId}`)
+      } else {
+        setAdminMessage(`Error: ${json.error}`)
+      }
+    } catch (e) {
+      setAdminMessage('Failed to reject church')
     }
   }
 
@@ -330,7 +402,7 @@ export default function Home() {
       const response = await fetch('/api/songs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ theme: selectedTheme.title, userId: (loginUsername || 'CBC') }),
+        body: JSON.stringify({ theme: selectedTheme.title, userId: (loginChurchId || loginUsername || 'CBC') }),
       })
       const data = await response.json()
       const rec = data.recommended || []
@@ -749,15 +821,17 @@ export default function Home() {
           <CardContent className="space-y-6">
             <div className="space-y-4">
               <Input
-                placeholder="User"
+                placeholder="Username"
                 value={loginUsername}
                 onChange={(e) => setLoginUsername(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleLogin() }}
               />
               <Input
                 type="password"
                 placeholder="Password"
                 value={loginPassword}
                 onChange={(e) => setLoginPassword(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleLogin() }}
               />
             </div>
 
@@ -768,6 +842,37 @@ export default function Home() {
               <Button variant="outline" onClick={() => { setUserType('basic'); setStep('verse') }} className="flex-1 border border-slate-300 shadow-sm text-slate-900">
                 Continue as Guest
               </Button>
+            </div>
+
+            <div className="flex justify-between text-sm text-slate-500">
+              <button
+                type="button"
+                className="hover:text-slate-800 underline"
+                onClick={async () => {
+                  setRegError('')
+                  setAvailableChurches([])
+                  setRegChurchId('')
+                  setRegUsername('')
+                  setRegEmail('')
+                  setRegPassword('')
+                  setRegPasswordConfirm('')
+                  try {
+                    const res = await fetch('/api/churches/list')
+                    const json = await res.json()
+                    if (json.ok) setAvailableChurches(json.churches || [])
+                  } catch {}
+                  setStep('register')
+                }}
+              >
+                Register
+              </button>
+              <button
+                type="button"
+                className="hover:text-slate-800 underline"
+                onClick={() => { setForgotEmail(''); setForgotSent(false); setStep('forgot-password') }}
+              >
+                Forgot password?
+              </button>
             </div>
           </CardContent>
         </Card>
@@ -1359,6 +1464,383 @@ export default function Home() {
             )}
           </div>
 
+        </div>
+      </div>
+    )
+  }
+
+  if (step === 'forgot-password') {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center p-4">
+        <Card className="max-w-md w-full bg-white text-slate-950">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl font-bold">Forgot Password</CardTitle>
+            <CardDescription>Enter your email and we'll send a reset link.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {forgotSent ? (
+              <div className="text-center space-y-4">
+                <p className="text-slate-700">If that email is registered, a reset link has been sent. Check your inbox.</p>
+                <Button onClick={() => setStep('login')} className="border border-slate-300 shadow-sm text-slate-900">
+                  Back to Login
+                </Button>
+              </div>
+            ) : (
+              <>
+                <Input
+                  type="email"
+                  placeholder="Your email address"
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                />
+                <div className="flex gap-3">
+                  <Button variant="outline" onClick={() => setStep('login')} className="flex-1 border border-slate-300 text-slate-900">
+                    Back
+                  </Button>
+                  <Button
+                    onClick={async () => {
+                      if (!forgotEmail.trim()) return
+                      await fetch('/api/auth/forgot-password', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: forgotEmail.trim() }),
+                      })
+                      setForgotSent(true)
+                    }}
+                    className="flex-1 border border-slate-300 shadow-sm text-slate-900"
+                  >
+                    Send Reset Link
+                  </Button>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (step === 'register') {
+    const hasChurches = availableChurches.length > 0
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center p-4">
+        <Card className="max-w-lg w-full bg-white text-slate-950">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl font-bold">Create Account</CardTitle>
+            <CardDescription>Register with your church to access all features.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {regError && (
+              <Alert className="border-red-200 bg-red-50 text-red-900">
+                <AlertDescription>{regError}</AlertDescription>
+              </Alert>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Your Church</label>
+              {hasChurches ? (
+                <select
+                  className="w-full px-3 py-2 border border-slate-300 rounded-md bg-white text-slate-950 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={regChurchId}
+                  onChange={(e) => setRegChurchId(e.target.value)}
+                >
+                  <option value="">Select a church…</option>
+                  {availableChurches.map(c => (
+                    <option key={c.id} value={c.id}>{c.name} — {c.location}</option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-sm text-slate-500">No churches registered yet.</p>
+              )}
+              <button
+                type="button"
+                className="text-sm text-blue-600 hover:underline mt-1"
+                onClick={() => {
+                  setRegError('')
+                  setRegChurchName('')
+                  setRegChurchLocation('')
+                  setStep('register-church')
+                }}
+              >
+                My church isn't listed — register it
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Username</label>
+              <Input
+                placeholder="e.g. johndoe (letters, numbers, _ or -)"
+                value={regUsername}
+                onChange={(e) => setRegUsername(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+              <Input
+                type="email"
+                placeholder="your@email.com"
+                value={regEmail}
+                onChange={(e) => setRegEmail(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+              <Input
+                type="password"
+                placeholder="Min 8 characters"
+                value={regPassword}
+                onChange={(e) => setRegPassword(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Confirm Password</label>
+              <Input
+                type="password"
+                placeholder="Re-enter password"
+                value={regPasswordConfirm}
+                onChange={(e) => setRegPasswordConfirm(e.target.value)}
+              />
+            </div>
+
+            <Alert className="border-blue-200 bg-blue-50 text-blue-900">
+              <AlertDescription className="text-sm">
+                <strong>Note:</strong> Song lists are shared per church. All users from the same church share one congregational song database.
+              </AlertDescription>
+            </Alert>
+
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={() => setStep('login')} className="flex-1 border border-slate-300 text-slate-900">
+                Back
+              </Button>
+              <Button
+                onClick={async () => {
+                  setRegError('')
+                  if (!regChurchId) { setRegError('Please select a church'); return }
+                  if (regPassword !== regPasswordConfirm) { setRegError('Passwords do not match'); return }
+                  try {
+                    const res = await fetch('/api/auth/register', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        username: regUsername,
+                        email: regEmail,
+                        password: regPassword,
+                        churchId: regChurchId,
+                      }),
+                    })
+                    const json = await res.json()
+                    if (json.ok) {
+                      setRegError('')
+                      alert('Account created! You can now log in.')
+                      setStep('login')
+                    } else {
+                      setRegError(json.error || 'Registration failed')
+                    }
+                  } catch {
+                    setRegError('Network error. Please try again.')
+                  }
+                }}
+                className="flex-1 border border-slate-300 shadow-sm text-slate-900"
+              >
+                Create Account
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (step === 'register-church') {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center p-4">
+        <Card className="max-w-lg w-full bg-white text-slate-950">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl font-bold">Register Your Church</CardTitle>
+            <CardDescription>Submit your church for approval. You'll be notified once approved.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {regError && (
+              <Alert className="border-red-200 bg-red-50 text-red-900">
+                <AlertDescription>{regError}</AlertDescription>
+              </Alert>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Church Name</label>
+              <Input
+                placeholder="e.g. Canterbury Baptist Church"
+                value={regChurchName}
+                onChange={(e) => setRegChurchName(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Location</label>
+              <Input
+                placeholder="e.g. Canterbury, Victoria, Australia"
+                value={regChurchLocation}
+                onChange={(e) => setRegChurchLocation(e.target.value)}
+              />
+            </div>
+
+            <hr className="border-slate-200" />
+            <p className="text-sm text-slate-600">Your account details (to log in once approved):</p>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Username</label>
+              <Input
+                placeholder="e.g. johndoe"
+                value={regUsername}
+                onChange={(e) => setRegUsername(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+              <Input
+                type="email"
+                placeholder="your@email.com"
+                value={regEmail}
+                onChange={(e) => setRegEmail(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+              <Input
+                type="password"
+                placeholder="Min 8 characters"
+                value={regPassword}
+                onChange={(e) => setRegPassword(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Confirm Password</label>
+              <Input
+                type="password"
+                placeholder="Re-enter password"
+                value={regPasswordConfirm}
+                onChange={(e) => setRegPasswordConfirm(e.target.value)}
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={() => setStep('register')} className="flex-1 border border-slate-300 text-slate-900">
+                Back
+              </Button>
+              <Button
+                onClick={async () => {
+                  setRegError('')
+                  if (regPassword !== regPasswordConfirm) { setRegError('Passwords do not match'); return }
+                  try {
+                    const res = await fetch('/api/churches/register', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        churchName: regChurchName,
+                        location: regChurchLocation,
+                        username: regUsername,
+                        email: regEmail,
+                        password: regPassword,
+                      }),
+                    })
+                    const json = await res.json()
+                    if (json.ok) {
+                      setRegError('')
+                      alert('Your church registration has been submitted for approval. You will be notified by email once approved.')
+                      setStep('login')
+                    } else {
+                      setRegError(json.error || 'Registration failed')
+                    }
+                  } catch {
+                    setRegError('Network error. Please try again.')
+                  }
+                }}
+                className="flex-1 border border-slate-300 shadow-sm text-slate-900"
+              >
+                Submit for Approval
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (step === 'admin') {
+    return (
+      <div className="min-h-screen bg-slate-900 text-slate-100 p-6">
+        <div className="max-w-4xl mx-auto space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-white">Church Helper — Admin</h1>
+              <p className="text-slate-400 text-sm mt-1">Pending church registrations</p>
+            </div>
+            <Button
+              variant="outline"
+              className="border-slate-600 text-slate-300 hover:text-white"
+              onClick={() => { setAdminPassword(''); setPendingChurches([]); setStep('login') }}
+            >
+              Logout
+            </Button>
+          </div>
+
+          {adminMessage && (
+            <div className="px-4 py-3 rounded-md bg-slate-700 text-slate-200 text-sm">{adminMessage}</div>
+          )}
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-slate-600 text-slate-300"
+            onClick={() => loadPendingChurches(adminPassword)}
+          >
+            Refresh
+          </Button>
+
+          {pendingChurches.length === 0 ? (
+            <div className="text-slate-400 py-12 text-center">No pending registrations.</div>
+          ) : (
+            <div className="space-y-4">
+              {pendingChurches.map((church) => (
+                <div key={church.id} className="rounded-lg border border-slate-700 bg-slate-800 p-5 space-y-4">
+                  <div className="space-y-1">
+                    <div className="text-lg font-semibold text-white">{church.name}</div>
+                    <div className="text-slate-400 text-sm">{church.location}</div>
+                    <div className="text-slate-500 text-xs">Submitted: {new Date(church.created_at).toLocaleString()}</div>
+                  </div>
+
+                  {church.pendingUsers?.length > 0 && (
+                    <div className="text-sm text-slate-300">
+                      <span className="font-medium">Requested by: </span>
+                      {church.pendingUsers.map((u: any) => `${u.id} (${u.email})`).join(', ')}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <label className="block text-xs text-slate-400 mb-1">Church ID / slug</label>
+                      <Input
+                        className="bg-slate-700 border-slate-600 text-white placeholder:text-slate-400"
+                        value={adminSlugs[church.id] ?? church.id}
+                        onChange={(e) => setAdminSlugs(prev => ({ ...prev, [church.id]: e.target.value }))}
+                      />
+                    </div>
+                    <Button
+                      className="bg-green-700 hover:bg-green-600 text-white border-0 mt-5"
+                      onClick={() => handleApproveChurch(church.id)}
+                    >
+                      Approve
+                    </Button>
+                    <Button
+                      className="bg-red-800 hover:bg-red-700 text-white border-0 mt-5"
+                      onClick={() => handleRejectChurch(church.id)}
+                    >
+                      Reject
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     )

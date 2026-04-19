@@ -4,6 +4,9 @@ import { ensureSongEmbeddings } from '@/lib/embeddings.server'
 export async function POST(request: Request) {
   try {
     const { userId, songs } = await request.json().catch(() => ({}))
+    if (!userId) {
+      return NextResponse.json({ error: 'userId is required' }, { status: 400 })
+    }
     const res = await ensureSongEmbeddings(userId, songs)
     return NextResponse.json({ built: res.length })
   } catch (error) {
