@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 
 const BIBLE_API_BASE = process.env.BIBLE_API_BASE || 'https://rest.api.bible'
 // Prefer environment variable, otherwise fall back to provided key for convenience (remove before production)
-const BIBLE_API_KEY = process.env.BIBLE_API_KEY || 'd_l7YU8i9x-KWllJseirK'
+const BIBLE_API_KEY = process.env.BIBLE_API_KEY || ''
 
 // Known IDs discovered from the API for common English translations
 const PREFERRED_BIBLES = [
@@ -82,8 +82,8 @@ async function fetchVerseText(verse: string) {
     // ignore discovery errors
   }
 
-  // if all lookups failed, return the reference only
-  return { ref: verse, text: verse }
+  // if all lookups failed, mark as not found
+  return { ref: verse, text: '', notFound: true }
 }
 
 export async function POST(req: Request) {
