@@ -12,7 +12,11 @@ export const CBC_SONGS = [
   'I will trust my savior Jesus',
   'Yet not I but through Chirst in me',
   'Amazing Grace',
-  'Blessed Assurance'
+  'Blessed Assurance',
+  'Cornerstone',
+  'How Great is Our God', 
+  '10,000 Reasons',
+  'Build My Life'
 ]
 
 // Mock CCLI numbers and additional metadata
@@ -121,6 +125,30 @@ SONG_METADATA['Blessed Assurance'] = {
   bandRequirements: 'Hymn',
   youtubeUrl: undefined,
   isHymn: true,
+}
+
+// Small curated list of well-known hymns for heuristic detection. Extend later or replace
+export const KNOWN_HYMNS = [
+  'Amazing Grace',
+  'Blessed Assurance',
+  'How Great Thou Art',
+  'Holy, Holy, Holy',
+  'The Old Rugged Cross',
+  'It Is Well with My Soul',
+  'Great Is Thy Faithfulness',
+  'Be Thou My Vision'
+]
+
+export function autoDetectHymn(title: string): boolean {
+  if (!title) return false
+  const t = title.trim()
+  if ((SONG_METADATA as any)[t]?.isHymn) return true
+  // direct match against known hymns
+  if (KNOWN_HYMNS.includes(t)) return true
+  // simple heuristic: titles containing 'Blessed' or 'Amazing' or 'Hymn' are likely hymns
+  const lower = t.toLowerCase()
+  if (lower.includes('blessed') || lower.includes('amazing') || lower.includes('hymn') || lower.includes('thy')) return true
+  return false
 }
 
 // User authentication (temporary - will be replaced with proper auth)

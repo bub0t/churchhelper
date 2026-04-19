@@ -923,19 +923,38 @@ export default function Home() {
 
             {/* After songs are shown, offer a button to plan other stuff */}
             {!isLoading && ( (recommendedFamiliar && recommendedFamiliar.length > 0) || (songs && songs.length > 0) ) && (
-              <div className="pt-4">
+              <div className="pt-4 space-y-4">
+                <section className="rounded-3xl border border-slate-200 bg-slate-50 p-6 shadow-sm">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h2 className="text-xl font-semibold text-slate-950">Add more songs to database</h2>
+                      <p className="text-slate-600">The app will suggest songs that are familiar to the congregation. Add titles to improve future suggestions.</p>
+                    </div>
+                    <div>
+                      <Button
+                        onClick={() => window.location.href = '/add-songs'}
+                        className="border border-slate-300 bg-white text-slate-950 shadow-sm"
+                      >
+                        Add more songs to database
+                      </Button>
+                    </div>
+                  </div>
+                </section>
+
                 <section className="rounded-3xl border border-slate-200 bg-slate-50 p-6 shadow-sm">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <h2 className="text-xl font-semibold text-slate-950">Need children's activity suggestions?</h2>
                       <p className="text-slate-600">Get children's church activity suggestions to complete your service plan.</p>
                     </div>
-                    <Button
-                      onClick={() => setStep('activities')}
-                      className="border border-slate-300 bg-white text-slate-950 shadow-sm"
-                    >
-                      Children's Activities
-                    </Button>
+                    <div>
+                      <Button
+                        onClick={() => setStep('activities')}
+                        className="border border-slate-300 bg-white text-slate-950 shadow-sm"
+                      >
+                        Children's Activities
+                      </Button>
+                    </div>
                   </div>
                 </section>
               </div>
