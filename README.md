@@ -1,97 +1,72 @@
 # Church Helper
 
-A browser-based application to help churches plan activities and select songs based on Bible verses and themes.
+An AI-powered browser-based tool to help churches plan services — including children's activities, worship songs, and youth group discussions — based on Bible verses and themes.
 
 ## Features
 
-- **Basic Mode**: Free access to children's church activity planning
-- **Advanced Mode**: Church accounts with song database management
-- **AI-Powered**: Uses OpenAI to generate themes and suggestions
-- **Weather-Aware**: Considers local weather for activity recommendations
-- **Simple UI**: Designed for non-technical users with natural conversation flow
+- **Bible Verse Lookup**: Enter up to 3 passages; full text is fetched and displayed for review
+- **AI Theme Generation**: Generates governing themes from selected verses with an optional feedback loop
+- **Children's Activities**: Age- and weather-aware games, crafts, and songs for kids
+- **Worship Songs**: Suggests songs from the congregation's known repertoire (advanced accounts only)
+- **Youth Group Discussion**: Generates 5 discussion questions for secondary students (12–18)
+- **Weather-Aware**: Fetches live weather forecast for Canterbury, VIC to inform activity suggestions
+- **Guest & Advanced Modes**: Guest access for activities; login required for worship song features
+- **Song Database Management**: Add new songs to improve future suggestions
 
 ## Tech Stack
 
-- **Frontend**: Next.js 15 with React 18 and TypeScript
-- **Styling**: Tailwind CSS + shadcn/ui components
-- **AI**: OpenAI API
-- **Database**: Supabase (PostgreSQL) - configured but not yet connected
-- **Icons**: Lucide React
+- **Frontend**: Next.js (App Router) + React + TypeScript
+- **Styling**: Tailwind CSS + shadcn/ui
+- **AI**: OpenAI gpt-4.1-mini via the Responses API
+- **Database**: Supabase (PostgreSQL + pgvector for song embeddings)
+- **Auth**: Supabase Auth with server-side fallback
+- **Bible**: rest.api.bible proxy (NLT / NIV)
+- **Weather**: OpenWeatherMap API
+- **Deployment**: Vercel
 
 ## Getting Started
 
 1. Clone the repository
 2. Install dependencies: `npm install`
-3. Set up environment variables (see `.env.example`)
-4. Run development server: `npm run dev`
+3. Create `.env.local` with the required variables (see below)
+4. Run the development server: `npm run dev`
 
 ## Environment Variables
 
-Create a `.env.local` file with:
+Create a `.env.local` file:
 
 ```
 OPENAI_API_KEY=your_openai_api_key
-SUPABASE_URL=your_supabase_url
-SUPABASE_ANON_KEY=your_supabase_anon_key
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_...
+SUPABASE_SERVICE_KEY=sb_secret_...
 OPENWEATHER_API_KEY=your_openweather_api_key
+BIBLE_API_KEY=your_bible_api_key
 ```
 
-## Current Implementation Status
+Add the same variables in Vercel → Project Settings → Environment Variables.
 
-### ✅ **Completed**
-- Project setup with Next.js + TypeScript + Tailwind CSS
-- shadcn/ui component library integration
-- OpenAI API integration for theme and content generation
-- Disclaimer modal with Holy Spirit discernment warning
-- Natural conversation flow UI (step-based navigation)
-- Bible verse input with optional context
-- AI-powered theme generation (with regeneration limit)
-- Theme selection interface
-- Activity vs Songs choice with user tier restrictions
-- Simple church authentication (CBC church configured)
-- Children's activities generation with age/size/weather considerations
-- Activity cards with expand/collapse functionality
-- Activity level indicators (laid-back, moderate, active)
-- Materials lists and discussion questions
-- Song suggestions from church database
-- CCLI numbers and YouTube links
-- Responsive design for mobile and desktop
+> `SUPABASE_SERVICE_KEY` must never use the `NEXT_PUBLIC_` prefix — it is server-side only.
 
-### 🔄 **Next Steps**
-1. **Weather API Integration**: Replace mock weather with OpenWeatherMap API
-2. **Supabase Database**: Set up database schema and connect to application
-3. **User Registration**: Allow new churches to sign up
-4. **Song Management**: Admin interface for song database
-5. **Export Features**: Print/save generated plans
-6. **Production Deployment**: Deploy to Vercel
+## Authentication
 
-## CBC Church Configuration
+- **Guest**: click "Continue as Guest" — access to children's activities and youth discussion only
+- **Advanced (church account)**: login with church credentials — unlocks worship song suggestions and song database management
+- Usernames are case-insensitive
 
-- **Location**: Canterbury, Victoria, Australia
-- **User**: "CBC"
-- **Password**: "John3:16"
-- **Songs**: 12 songs with complete metadata (CCLI, tempo, band requirements)
+## Architecture
+
+- Single-page step-based flow in `src/app/page.tsx`
+- All OpenAI calls in `src/lib/openai.server.ts`
+- Prompt templates in `src/lib/prompts.md`
+- Song vector embeddings in `src/lib/embeddings.server.ts` (Supabase pgvector)
+- API routes under `src/app/api/`: `activities`, `discussion`, `themes`, `songs`, `songs/add`, `bible/verses`, `weather`, `auth/login`, `embeddings/rebuild`
 
 ## Development
 
 ```bash
-# Install dependencies
-npm install
-
-# Run development server
-npm run dev
-
-# Build for production
-npm run build
-
-# Start production server
-npm start
+npm install       # install dependencies
+npm run dev       # development server (Turbopack)
+npm run build     # production build
+npm start         # start production server
 ```
-
-## Architecture
-
-- **Conversational Flow**: Step-based state management for natural user experience
-- **AI Integration**: OpenAI GPT-4 for content generation with fallback handling
-- **Component-Based**: Modular UI components with shadcn/ui
-- **Type-Safe**: Full TypeScript implementation
-- **Extensible**: Database-ready architecture for future features
