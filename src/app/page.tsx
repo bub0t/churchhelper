@@ -62,6 +62,7 @@ export default function Home() {
   const [suburbQuery, setSuburbQuery] = useState('')
   const [suburbSuggestions, setSuburbSuggestions] = useState<string[]>([])
   const [suburbLoading, setSuburbLoading] = useState(false)
+  const [suburbSelected, setSuburbSelected] = useState(false)
   const suburbDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [availableChurches, setAvailableChurches] = useState<{id: string, name: string, location: string}[]>([])
 
@@ -80,6 +81,7 @@ export default function Home() {
   const handleSuburbInput = (value: string) => {
     setSuburbQuery(value)
     setRegChurchLocation(value)
+    setSuburbSelected(false)
     setSuburbSuggestions([])
     if (suburbDebounceRef.current) clearTimeout(suburbDebounceRef.current)
     if (value.trim().length < 2) return
@@ -1713,11 +1715,15 @@ export default function Home() {
             <div className="relative">
               <label className="block text-sm font-medium text-slate-700 mb-1">Suburb</label>
               <Input
-                placeholder="e.g. Canterbury"
+                placeholder="Start typing your suburb and select from the list"
                 value={suburbQuery}
                 onChange={(e) => handleSuburbInput(e.target.value)}
                 autoComplete="off"
+                className={suburbQuery && !suburbSelected ? 'border-amber-400 focus:border-amber-500' : ''}
               />
+              {suburbQuery && !suburbSelected && !suburbLoading && suburbSuggestions.length === 0 && (
+                <p className="text-xs text-amber-600 mt-1">Please select a suburb from the dropdown suggestions.</p>
+              )}
               {suburbLoading && (
                 <p className="text-xs text-slate-400 mt-1">Searching...</p>
               )}
@@ -1730,6 +1736,7 @@ export default function Home() {
                       onClick={() => {
                         setSuburbQuery(s)
                         setRegChurchLocation(s)
+                        setSuburbSelected(true)
                         setSuburbSuggestions([])
                       }}
                     >
@@ -1741,41 +1748,14 @@ export default function Home() {
             </div>
 
             <hr className="border-slate-200" />
-            <p className="text-sm text-slate-600">Your account details (to log in once approved):</p>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Username</label>
-              <Input
-                placeholder="e.g. johndoe"
-                value={regUsername}
-                onChange={(e) => setRegUsername(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Contact Email</label>
               <Input
                 type="email"
                 placeholder="your@email.com"
                 value={regEmail}
                 onChange={(e) => setRegEmail(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
-              <Input
-                type="password"
-                placeholder="Min 8 characters"
-                value={regPassword}
-                onChange={(e) => setRegPassword(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Confirm Password</label>
-              <Input
-                type="password"
-                placeholder="Re-enter password"
-                value={regPasswordConfirm}
-                onChange={(e) => setRegPasswordConfirm(e.target.value)}
               />
             </div>
 
@@ -1786,7 +1766,7 @@ export default function Home() {
               <Button
                 onClick={async () => {
                   setRegError('')
-                  if (regPassword !== regPasswordConfirm) { setRegError('Passwords do not match'); return }
+                  if (!suburbSelected) { setRegError('Please select your suburb from the dropdown suggestions.'); return }
                   try {
                     const res = await fetch('/api/churches/register', {
                       method: 'POST',
@@ -1794,9 +1774,7 @@ export default function Home() {
                       body: JSON.stringify({
                         churchName: regChurchName,
                         location: regChurchLocation,
-                        username: regUsername,
-                        email: regEmail,
-                        password: regPassword,
+                        contactEmail: regEmail,
                       }),
                     })
                     const json = await res.json()
@@ -1865,10 +1843,9 @@ export default function Home() {
                     <div className="text-slate-500 text-xs">Submitted: {new Date(church.created_at).toLocaleString()}</div>
                   </div>
 
-                  {church.pendingUsers?.length > 0 && (
+                  {church.contactEmail && (
                     <div className="text-sm text-slate-300">
-                      <span className="font-medium">Requested by: </span>
-                      {church.pendingUsers.map((u: any) => `${u.id} (${u.email})`).join(', ')}
+                      <span className="font-medium">Contact: </span>{church.contactEmail}
                     </div>
                   )}
 

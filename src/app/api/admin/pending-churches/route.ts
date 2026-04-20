@@ -24,25 +24,20 @@ export async function GET(request: Request) {
 
   const { data: churches, error: cErr } = await supabase
     .from('churches')
-    .select('id, name, location, created_at')
+    .select('id, name, location, contact_email')
     .eq('status', 'pending')
-    .order('created_at', { ascending: true })
 
   if (cErr) {
     console.error('[pending-churches] churches fetch error:', cErr)
     return NextResponse.json({ ok: false, error: cErr.message }, { status: 500 })
   }
 
-  const result = await Promise.all(
-    (churches || []).map(async (church: any) => {
-      const { data: users } = await supabase!
-        .from('users')
-        .select('id, email, created_at')
-        .eq('church_id', church.id)
-        .eq('status', 'pending')
-      return { ...church, pendingUsers: users || [] }
-    })
-  )
+  const result = (churches || []).map((church: any) => ({
+    id: church.id,
+    name: church.name,
+    location: church.location,
+    contactEmail: church.contact_email || '',
+  }))
 
   return NextResponse.json({ ok: true, churches: result })
 }
