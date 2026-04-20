@@ -59,6 +59,10 @@ export default function Home() {
   const [regPasswordConfirm, setRegPasswordConfirm] = useState('')
   const [regChurchLocation, setRegChurchLocation] = useState('')
   const [regError, setRegError] = useState('')
+  const [suburbQuery, setSuburbQuery] = useState('')
+  const [suburbSuggestions, setSuburbSuggestions] = useState<string[]>([])
+  const [suburbLoading, setSuburbLoading] = useState(false)
+  const suburbDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [availableChurches, setAvailableChurches] = useState<{id: string, name: string, location: string}[]>([])
 
   // Forgot password state
@@ -72,6 +76,38 @@ export default function Home() {
   const [adminMessage, setAdminMessage] = useState('')
   const [groupSize, setGroupSize] = useState('')
   const [ageRange, setAgeRange] = useState('5-11')
+
+  const handleSuburbInput = (value: string) => {
+    setSuburbQuery(value)
+    setRegChurchLocation(value)
+    setSuburbSuggestions([])
+    if (suburbDebounceRef.current) clearTimeout(suburbDebounceRef.current)
+    if (value.trim().length < 2) return
+    suburbDebounceRef.current = setTimeout(async () => {
+      setSuburbLoading(true)
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=6&q=${encodeURIComponent(value + ', Australia')}&featuretype=settlement`
+        const res = await fetch(url, { headers: { 'Accept-Language': 'en', 'User-Agent': 'ChurchHelperApp/1.0' } })
+        const data = await res.json()
+        const suggestions: string[] = []
+        for (const item of data) {
+          const a = item.address || {}
+          const suburb = a.suburb || a.village || a.town || a.city || a.municipality || ''
+          const state = a.state || ''
+          const country = a.country || ''
+          if (suburb && state && country) {
+            const label = `${suburb}, ${state}, ${country}`
+            if (!suggestions.includes(label)) suggestions.push(label)
+          }
+        }
+        setSuburbSuggestions(suggestions)
+      } catch {
+        // silently ignore network errors
+      } finally {
+        setSuburbLoading(false)
+      }
+    }, 400)
+  }
 
   // Collect verses and go to review (no API call here)
   const handleVerseSubmit = async () => {
@@ -1674,13 +1710,34 @@ export default function Home() {
                 onChange={(e) => setRegChurchName(e.target.value)}
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Location</label>
+            <div className="relative">
+              <label className="block text-sm font-medium text-slate-700 mb-1">Suburb</label>
               <Input
-                placeholder="e.g. Canterbury, Victoria, Australia"
-                value={regChurchLocation}
-                onChange={(e) => setRegChurchLocation(e.target.value)}
+                placeholder="e.g. Canterbury"
+                value={suburbQuery}
+                onChange={(e) => handleSuburbInput(e.target.value)}
+                autoComplete="off"
               />
+              {suburbLoading && (
+                <p className="text-xs text-slate-400 mt-1">Searching...</p>
+              )}
+              {suburbSuggestions.length > 0 && (
+                <ul className="absolute z-10 w-full bg-white border border-slate-200 rounded-md shadow-lg mt-1 max-h-48 overflow-y-auto">
+                  {suburbSuggestions.map((s, i) => (
+                    <li
+                      key={i}
+                      className="px-3 py-2 text-sm text-slate-800 hover:bg-slate-100 cursor-pointer"
+                      onClick={() => {
+                        setSuburbQuery(s)
+                        setRegChurchLocation(s)
+                        setSuburbSuggestions([])
+                      }}
+                    >
+                      {s}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             <hr className="border-slate-200" />
