@@ -140,7 +140,13 @@ export async function ensureSongEmbeddings(userId?: string, songs?: string[]): P
  * Uses the church's song list via church_songs join when Supabase is available.
  */
 export async function getTopKSongsByTheme(theme: string, k = 10, userId?: string): Promise<string[]> {
-  const themeVector = await embedText(theme)
+  let themeVector: number[]
+  try {
+    themeVector = await embedText(theme)
+  } catch (e) {
+    console.warn('[embeddings] embedText failed, skipping semantic ranking:', e)
+    return []
+  }
 
   let emb: StoredEmbedding[] = []
 
@@ -164,7 +170,11 @@ export async function getTopKSongsByTheme(theme: string, k = 10, userId?: string
       const raw = await fs.readFile(EMBED_PATH, 'utf8')
       emb = JSON.parse(raw) as StoredEmbedding[]
     } catch (e) {
-      emb = await ensureSongEmbeddings(undefined)
+      try {
+        emb = await ensureSongEmbeddings(undefined)
+      } catch {
+        return []
+      }
     }
   }
 
