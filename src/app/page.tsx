@@ -49,6 +49,9 @@ export default function Home() {
   const [loginUsername, setLoginUsername] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
   const [loginChurchId, setLoginChurchId] = useState('')
+  const [churchLocation, setChurchLocation] = useState('Canterbury, Victoria, Australia')
+  const [churchServiceDay, setChurchServiceDay] = useState('Sunday')
+  const [churchServiceTime, setChurchServiceTime] = useState('10:00')
 
   // Registration state
   const [regChurchId, setRegChurchId] = useState('')
@@ -58,6 +61,8 @@ export default function Home() {
   const [regPassword, setRegPassword] = useState('')
   const [regPasswordConfirm, setRegPasswordConfirm] = useState('')
   const [regChurchLocation, setRegChurchLocation] = useState('')
+  const [regServiceDay, setRegServiceDay] = useState('Sunday')
+  const [regServiceTime, setRegServiceTime] = useState('10:00')
   const [regError, setRegError] = useState('')
   const [suburbQuery, setSuburbQuery] = useState('')
   const [suburbSuggestions, setSuburbSuggestions] = useState<string[]>([])
@@ -74,6 +79,7 @@ export default function Home() {
   const [adminPassword, setAdminPassword] = useState('')
   const [pendingChurches, setPendingChurches] = useState<any[]>([])
   const [adminSlugs, setAdminSlugs] = useState<Record<string, string>>({})
+  const [adminInviteKeys, setAdminInviteKeys] = useState<Record<string, string>>({})
   const [adminMessage, setAdminMessage] = useState('')
   const [groupSize, setGroupSize] = useState('')
   const [ageRange, setAgeRange] = useState('5-11')
@@ -283,6 +289,9 @@ export default function Home() {
 
       setLoginUsername(normalizedUsername)
       setLoginChurchId(json.churchId || normalizedUsername)
+      if (json.churchLocation) setChurchLocation(json.churchLocation)
+      if (json.serviceDay) setChurchServiceDay(json.serviceDay)
+      if (json.serviceTime) setChurchServiceTime(json.serviceTime)
       setUserType('advanced')
       setStep('verse')
     } catch (e) {
@@ -292,14 +301,27 @@ export default function Home() {
   }
 
   const loadPendingChurches = async (password: string) => {
+    const INVITE_VERSES = ['John3:16','Psalm23','Romans8:28','Proverbs3:5','Isaiah40:31','Philippians4:13','Jeremiah29:11','Matthew6:33','Galatians5:22','Hebrews11:1','Psalm46:10','John14:6','Romans5:8','Ephesians2:8','Joshua1:9']
+    const INVITE_WORDS = ['Grace','Peace','Joy','Hope','Faith','Love','Light','Jordan','Zion','Bethel','Shalom','Moses','Elijah','Salvation','Praise','Glory','Refuge','Canaan','Lamb','Shepherd']
+    const suggestKey = () => {
+      const verse = INVITE_VERSES[Math.floor(Math.random() * INVITE_VERSES.length)]
+      const word = INVITE_WORDS[Math.floor(Math.random() * INVITE_WORDS.length)]
+      return `${verse}+${word}`
+    }
     try {
       const res = await fetch(`/api/admin/pending-churches?password=${encodeURIComponent(password)}`)
       const json = await res.json()
       if (json.ok) {
-        setPendingChurches(json.churches || [])
+        const churches = json.churches || []
+        setPendingChurches(churches)
         const slugs: Record<string, string> = {}
-        for (const c of json.churches || []) slugs[c.id] = c.id
+        const keys: Record<string, string> = {}
+        for (const c of churches) {
+          slugs[c.id] = c.id
+          keys[c.id] = suggestKey()
+        }
         setAdminSlugs(slugs)
+        setAdminInviteKeys(keys)
       }
     } catch (e) {
       console.error('Failed to load pending churches', e)
@@ -308,12 +330,14 @@ export default function Home() {
 
   const handleApproveChurch = async (pendingId: string) => {
     const approvedId = (adminSlugs[pendingId] || pendingId).trim().toLowerCase()
+    const inviteKey = (adminInviteKeys[pendingId] || '').trim()
+    if (!inviteKey) { setAdminMessage('Please set an invite key before approving.'); return }
     setAdminMessage('')
     try {
       const res = await fetch('/api/admin/approve-church', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: adminPassword, pendingId, approvedId }),
+        body: JSON.stringify({ password: adminPassword, pendingId, approvedId, inviteKey }),
       })
       const json = await res.json()
       if (json.ok) {
@@ -490,7 +514,12 @@ export default function Home() {
   useEffect(() => {
     if (step === 'choice' && !weatherFetchedRef.current) {
       weatherFetchedRef.current = true
-      fetch('/api/weather?location=Canterbury%2C%20Victoria%2C%20Australia')
+      const params = new URLSearchParams({
+        location: churchLocation,
+        serviceDay: churchServiceDay,
+        serviceTime: churchServiceTime,
+      })
+      fetch(`/api/weather?${params}`)
         .then(r => r.json())
         .then(data => { setWeather(data.weather || 'Sunny and mild') })
         .catch(() => { setWeather('Sunny and mild') })
@@ -791,6 +820,9 @@ export default function Home() {
             <CardDescription>
               Selected theme: {selectedTheme?.title}
             </CardDescription>
+            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mt-2">
+              💡 <strong>Tip:</strong> Take a screenshot or copy your results — they won&apos;t be saved and may be lost while navigating through the app.
+            </p>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid md:grid-cols-2 gap-4">
@@ -859,7 +891,7 @@ export default function Home() {
           <CardContent className="space-y-6">
             <div className="space-y-4">
               <Input
-                placeholder="Username"
+                placeholder="Username or email"
                 value={loginUsername}
                 onChange={(e) => setLoginUsername(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleLogin() }}
@@ -932,7 +964,7 @@ export default function Home() {
               <p className="text-slate-600">Theme: {selectedTheme?.title}</p>
               <p className="text-sm text-slate-700 mt-2">
                 {weather
-                  ? `It will be ${weather} in Canterbury on ${getNextSundayText()} at 10:00 am.`
+                  ? weather
                   : 'Fetching weather forecast for next Sunday…'}
               </p>
             </div>
@@ -1749,6 +1781,40 @@ export default function Home() {
 
             <hr className="border-slate-200" />
 
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Service Day</label>
+                <select
+                  value={regServiceDay}
+                  onChange={(e) => setRegServiceDay(e.target.value)}
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                >
+                  {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map(d => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Service Time</label>
+                <select
+                  value={regServiceTime}
+                  onChange={(e) => setRegServiceTime(e.target.value)}
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                >
+                  {Array.from({ length: 33 }, (_, i) => {
+                    const totalMins = 5 * 60 + i * 30
+                    const h = Math.floor(totalMins / 60)
+                    const m = totalMins % 60
+                    const value = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`
+                    const ampm = h < 12 ? 'AM' : 'PM'
+                    const displayH = h % 12 === 0 ? 12 : h % 12
+                    const label = `${displayH}:${String(m).padStart(2,'0')} ${ampm}`
+                    return <option key={value} value={value}>{label}</option>
+                  })}
+                </select>
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Contact Email</label>
               <Input
@@ -1775,6 +1841,8 @@ export default function Home() {
                         churchName: regChurchName,
                         location: regChurchLocation,
                         contactEmail: regEmail,
+                        serviceDay: regServiceDay,
+                        serviceTime: regServiceTime,
                       }),
                     })
                     const json = await res.json()
@@ -1848,6 +1916,11 @@ export default function Home() {
                       <span className="font-medium">Contact: </span>{church.contactEmail}
                     </div>
                   )}
+                  {(church.serviceDay || church.serviceTime) && (
+                    <div className="text-sm text-slate-300">
+                      <span className="font-medium">Service: </span>{church.serviceDay} at {church.serviceTime}
+                    </div>
+                  )}
 
                   <div className="flex items-center gap-3">
                     <div className="flex-1">
@@ -1858,14 +1931,24 @@ export default function Home() {
                         onChange={(e) => setAdminSlugs(prev => ({ ...prev, [church.id]: e.target.value }))}
                       />
                     </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Invite Key <span className="text-slate-500">(sent to contact email on approval)</span></label>
+                    <Input
+                      className="bg-slate-700 border-slate-600 text-white placeholder:text-slate-400 font-mono text-sm"
+                      value={adminInviteKeys[church.id] ?? ''}
+                      onChange={(e) => setAdminInviteKeys(prev => ({ ...prev, [church.id]: e.target.value }))}
+                    />
+                  </div>
+                  <div className="flex gap-3">
                     <Button
-                      className="bg-green-700 hover:bg-green-600 text-white border-0 mt-5"
+                      className="flex-1 bg-green-700 hover:bg-green-600 text-white border-0"
                       onClick={() => handleApproveChurch(church.id)}
                     >
                       Approve
                     </Button>
                     <Button
-                      className="bg-red-800 hover:bg-red-700 text-white border-0 mt-5"
+                      className="flex-1 bg-red-800 hover:bg-red-700 text-white border-0"
                       onClick={() => handleRejectChurch(church.id)}
                     >
                       Reject

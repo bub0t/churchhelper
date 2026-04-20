@@ -24,7 +24,7 @@ export async function GET(request: Request) {
 
   const { data: churches, error: cErr } = await supabase
     .from('churches')
-    .select('id, name, location, contact_email')
+    .select('id, name, location, contact_email, service_day, service_time')
     .eq('status', 'pending')
 
   if (cErr) {
@@ -37,6 +37,8 @@ export async function GET(request: Request) {
     name: church.name,
     location: church.location,
     contactEmail: church.contact_email || '',
+    serviceDay: church.service_day || 'Sunday',
+    serviceTime: church.service_time || '10:00',
   }))
 
   return NextResponse.json({ ok: true, churches: result })

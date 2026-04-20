@@ -41,9 +41,8 @@ export async function POST(request: Request) {
         used: false,
       })
 
-      const appUrl = process.env.APP_URL || process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : 'http://localhost:3000'
+      const appUrl = process.env.APP_URL
+        ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
       const resetLink = `${appUrl}/reset-password?token=${token}`
 
       await sendUserEmail(

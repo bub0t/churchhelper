@@ -275,8 +275,13 @@ export async function aiGenerateDiscussion(theme: string, verses: string[]): Pro
   const verseList = verses.length > 0 ? verses.join(', ') : 'the theme'
   const prompt = `Generate exactly 5 discussion questions about the theme "${theme}" based on ${verseList}.
 The questions are for a youth group of secondary school students aged 12 to 18 years old.
-Make the questions thought-provoking, age-appropriate, and relevant to their everyday lives as teenagers.
-Mix question types: some personal/reflective, some theological, some practical/application-focused.
+Make the questions thought-provoking, age-appropriate, and grounded in the theme and verses.
+
+Requirements:
+- At least 2 of the 5 questions MUST directly connect the theme to real challenges adolescents face today, such as peer pressure, social media, identity, belonging, mental health, fear of missing out, online bullying, or comparison culture. Name the specific challenge in the question.
+- The remaining questions should mix: personal/reflective, theological, and practical/application-focused types.
+- All questions must feel relevant to teenagers living in the real world, not generic or abstract.
+
 Return ONLY a valid JSON array of 5 strings, e.g. ["Question 1?", "Question 2?", ...]`
 
   try {
@@ -299,9 +304,9 @@ Return ONLY a valid JSON array of 5 strings, e.g. ["Question 1?", "Question 2?",
   // Fallback questions
   return [
     `How does the theme "${theme}" connect to challenges you face in your own life?`,
+    `When you scroll through social media and see others' highlight reels, how does the message of ${verseList} change the way you see yourself?`,
+    `Have you ever felt pressure from friends to act against your values? How could this theme give you strength in that moment?`,
     `What does it mean to live out the message of ${verseList} as a young person today?`,
-    `Is there anything in this theme that surprises or challenges you? Why?`,
-    `How could you share this message with someone your age who doesn't go to church?`,
     `What is one practical thing you could do this week that reflects this theme?`,
   ]
 }

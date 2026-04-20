@@ -19,45 +19,57 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, role: 'superadmin' })
     }
 
-    // Regular users: check `users` table
+    // Regular users: check `users` table — match by username or email
     if (supabase) {
-      const { data, error } = await supabase
+      const isEmail = id.includes('@')
+      const query = supabase
         .from('users')
         .select('id, password_hash, church_id, status')
-        .eq('id', id)
-        .maybeSingle()
+
+      const { data, error } = await (isEmail
+        ? query.eq('email', id).maybeSingle()
+        : query.eq('id', id).maybeSingle())
 
       if (error) {
         console.error('/api/auth/login supabase error:', error)
         return NextResponse.json({ ok: false }, { status: 500 })
       }
 
-      if (data) {
-        if (data.status !== 'approved') {
+      // If looked up by username and not found, also try email fallback
+      let resolved = data
+      if (!resolved && !isEmail) {
+        const { data: byEmail } = await supabase
+          .from('users')
+          .select('id, password_hash, church_id, status')
+          .eq('email', id)
+          .maybeSingle()
+        resolved = byEmail
+      }
+
+      if (resolved) {
+        if (resolved.status !== 'approved') {
           return NextResponse.json({ ok: false, reason: 'pending' }, { status: 403 })
         }
-        const match = await bcrypt.compare(password, data.password_hash)
+        const match = await bcrypt.compare(password, resolved.password_hash)
         if (!match) return NextResponse.json({ ok: false }, { status: 401 })
-        return NextResponse.json({ ok: true, role: 'user', churchId: data.church_id })
+
+        const { data: church } = await supabase
+          .from('churches')
+          .select('location, service_day, service_time')
+          .eq('id', resolved.church_id)
+          .maybeSingle()
+
+        return NextResponse.json({
+          ok: true,
+          role: 'user',
+          churchId: resolved.church_id,
+          churchLocation: (church as any)?.location ?? null,
+          serviceDay: (church as any)?.service_day ?? 'Sunday',
+          serviceTime: (church as any)?.service_time ?? '10:00',
+        })
       }
 
       // No user found — fall through to legacy church fallback below
-    }
-
-    // Legacy fallback: check `churches` table (for existing CBC account before users table is seeded)
-    if (supabase) {
-      const { data: church } = await supabase
-        .from('churches')
-        .select('password')
-        .eq('id', id)
-        .maybeSingle()
-
-      const stored = (church as any)?.password
-      if (stored) {
-        const match = await bcrypt.compare(password, stored)
-        if (!match) return NextResponse.json({ ok: false }, { status: 401 })
-        return NextResponse.json({ ok: true, role: 'user', churchId: id })
-      }
     }
 
     return NextResponse.json({ ok: false }, { status: 401 })
