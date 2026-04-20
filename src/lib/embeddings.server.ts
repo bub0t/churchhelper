@@ -106,7 +106,13 @@ export async function ensureSongEmbeddings(userId?: string, songs?: string[]): P
 
 // Get top-K song titles by theme. If Supabase + userId are provided, pull user's embeddings from Supabase and score locally.
 export async function getTopKSongsByTheme(theme: string, k = 10, userId?: string): Promise<string[]> {
-  const themeVector = await embedText(theme)
+  let themeVector: number[]
+  try {
+    themeVector = await embedText(theme)
+  } catch (e) {
+    console.warn('[embeddings] embedText failed, skipping semantic ranking:', e)
+    return []
+  }
 
   let emb: StoredEmbedding[] = []
   if (supabase && userId) {
@@ -123,7 +129,11 @@ export async function getTopKSongsByTheme(theme: string, k = 10, userId?: string
       const raw = await fs.readFile(EMBED_PATH, 'utf8')
       emb = JSON.parse(raw) as StoredEmbedding[]
     } catch (e) {
-      emb = await ensureSongEmbeddings(undefined)
+      try {
+        emb = await ensureSongEmbeddings(undefined)
+      } catch {
+        return []
+      }
     }
   }
 
