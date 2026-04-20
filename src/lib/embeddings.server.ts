@@ -205,18 +205,6 @@ async function embedText(text: string): Promise<number[]> {
   return res.data[0].embedding as number[]
 }
 
-function cosine(a: number[], b: number[]) {
-  let dot = 0
-  let na = 0
-  let nb = 0
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i]
-    na += a[i] * a[i]
-    nb += b[i] * b[i]
-  }
-  return dot / (Math.sqrt(na) * Math.sqrt(nb) + 1e-12)
-}
-
 // Build or ensure embeddings for a given user's song list. If userId is provided and Supabase is configured,
 // store embeddings in Supabase scoped to that user. Otherwise store/read from local JSON file.
 export async function ensureSongEmbeddings(userId?: string, songs?: string[]): Promise<StoredEmbedding[]> {
