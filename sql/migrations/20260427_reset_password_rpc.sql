@@ -10,7 +10,7 @@ CREATE OR REPLACE FUNCTION reset_password_with_token(
 )
 RETURNS TEXT        -- 'ok' | 'invalid_token'
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
 AS $$
 DECLARE
   v_user_id TEXT;
