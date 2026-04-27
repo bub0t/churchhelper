@@ -283,11 +283,10 @@ export async function aiGenerateSongs(theme: string, churchSongs: string[]): Pro
 }
 
 export async function aiGenerateDiscussion(theme: string, verses: string[], excludedQuestions: string[] = []): Promise<string[]> {
-  const verseList = verses.length > 0 ? verses.join(', ') : 'the theme'
+  const verseLine = verses.length > 0 ? `\nVerses: ${verses.join(', ')}` : ''
   const prompt = `Generate a set of discussion questions for a youth group of secondary school students aged 12 to 18.
 
-Theme: "${theme}"
-Verses: ${verseList}
+Theme: "${theme}"${verseLine}
 
 Every question must directly serve and support this theme — do not drift into general topics. Each question should help students engage more deeply with what the theme means, what the verse says, and how it applies to their lives.
 
