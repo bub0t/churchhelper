@@ -93,12 +93,17 @@ export async function GET(request: Request) {
         const ampm = h < 12 ? 'AM' : 'PM'
         const displayH = h % 12 === 0 ? 12 : h % 12
         const displayTime = `${displayH}:${mStr} ${ampm}`
-        const label = `forecast for ${serviceDay} ${displayTime}`
 
-        let weatherStr = temp != null ? `${description}, ${temp}°C (${label})` : `${description} (${label})`
+        // Compute the actual service date for the label
+        const serviceLocalDate = new Date(serviceUtcTs * 1000 + tzOffsetSeconds * 1000)
+        const dayNum = serviceLocalDate.getUTCDate()
+        const monthName = serviceLocalDate.toLocaleString('en-AU', { month: 'long', timeZone: 'UTC' })
+        const label = `Forecast for ${dayNum} ${monthName} (${serviceDay}) ${displayTime} in ${location}`
+
+        let weatherStr = temp != null ? `${label}: ${description}, ${temp}°C` : `${label}: ${description}`
 
         if (rain3h > 0 || pop >= 0.5) {
-          weatherStr += '; rain expected — ground may be wet'
+          weatherStr += ' — indoor activities recommended (rain expected, ground may be wet)'
         }
 
         return NextResponse.json({ weather: weatherStr })
@@ -113,7 +118,14 @@ export async function GET(request: Request) {
       const ampm = h < 12 ? 'AM' : 'PM'
       const displayH = h % 12 === 0 ? 12 : h % 12
       const displayTime = `${displayH}:${mStr} ${ampm}`
-      const weatherStr = `Forecast not available yet — assuming sunny conditions for ${serviceDay} at ${displayTime} in ${location}`
+
+      // Compute the next service date even for the fallback
+      const tzFallback = 0 // no tz data in this branch; use UTC approximation
+      const serviceUtcFallback = nextServiceTimestamp(serviceDay, serviceTime, tzFallback)
+      const fallbackDate = new Date(serviceUtcFallback * 1000)
+      const dayNumF = fallbackDate.getUTCDate()
+      const monthNameF = fallbackDate.toLocaleString('en-AU', { month: 'long', timeZone: 'UTC' })
+      const weatherStr = `Forecast for ${dayNumF} ${monthNameF} (${serviceDay}) ${displayTime} in ${location}: rain data unavailable this far ahead — outdoor activities suggested for now, but verify closer to the date`
       return NextResponse.json({ weather: weatherStr })
     }
 

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import supabase from '@/lib/supabase.server'
-import { sendAdminNotification } from '@/lib/email'
+import { sendAdminNotification, sendUserEmail } from '@/lib/email'
 
 const VALID_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -31,6 +31,10 @@ function slugify(name: string): string {
  */
 export async function POST(request: Request) {
   try {
+    if (process.env.NEXT_PUBLIC_CHURCH_REGISTRATION_ENABLED !== 'true') {
+      return NextResponse.json({ ok: false, error: 'Church registration is not currently available.' }, { status: 503 })
+    }
+
     const body = await request.json().catch(() => ({}))
     const { churchName, location, contactEmail, serviceDay, serviceTime } = body
 
@@ -100,6 +104,17 @@ export async function POST(request: Request) {
          <li><strong>Contact:</strong> ${normalEmail}</li>
        </ul>
        <p>Log in as superadmin to approve or reject this request.</p>`
+    )
+
+    await sendUserEmail(
+      normalEmail,
+      'Thank you for registering with Church Helper',
+      `<p>Hi there,</p>
+       <p>Thank you so much for registering <strong>${churchName.trim()}</strong> with Church Helper! We're glad you're here.</p>
+       <p>Your registration has been submitted and is currently pending review. We'll do our best to complete it within <strong>24 hours</strong> — though please bear with us, as the team behind Church Helper is small and our capacity is limited.</p>
+       <p>Once approved, you'll receive another email with your church's invite key, which your team members will need to create their accounts.</p>
+       <p>If you have any questions in the meantime, feel free to reply to this email.</p>
+       <p>Blessings,<br/>The Church Helper Team</p>`
     )
 
     return NextResponse.json({ ok: true, pending: true })

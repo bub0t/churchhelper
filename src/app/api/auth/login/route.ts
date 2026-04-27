@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import supabase from '@/lib/supabase.server'
 import bcrypt from 'bcryptjs'
 
-const SUPERADMIN_USERNAME = 'superadmin'
+const SUPERADMIN_USERNAME = 'supahadmin'
 
 export async function POST(request: Request) {
   try {

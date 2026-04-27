@@ -44,16 +44,23 @@ async function getPromptTemplate(name: string): Promise<string> {
 }
 
 function safeParseJson<T>(value: string): T | null {
+  // Strip markdown code fences first
+  const stripped = value.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
   try {
-    return JSON.parse(value) as T
+    return JSON.parse(stripped) as T
   } catch {
-    const match = value.match(/(\[[\s\S]*\])/)
-    if (match) {
+    // Try to extract an object {...} first, then fall back to array [...]
+    const objMatch = stripped.match(/(\{[\s\S]*\})/)
+    if (objMatch) {
       try {
-        return JSON.parse(match[1]) as T
-      } catch {
-        return null
-      }
+        return JSON.parse(objMatch[1]) as T
+      } catch {}
+    }
+    const arrMatch = stripped.match(/(\[[\s\S]*\])/)
+    if (arrMatch) {
+      try {
+        return JSON.parse(arrMatch[1]) as T
+      } catch {}
     }
     return null
   }

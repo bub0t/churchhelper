@@ -31,6 +31,11 @@ Return only valid JSON — do not include extra commentary.
 <!-- PROMPT:activities -->
 Generate children's Christian church activities based on theme "{{theme}}" from verse "{{verse}}", or directly from "{{verse}}". Group size: {{groupSize}}, Age range: {{ageRange}}, Weather: {{weather}}.
 
+CRITICAL — group size must shape every game suggestion:
+- If group size is 1: suggest only solo or one-on-one (child + leader) activities. Do NOT suggest any game that requires more than 2 people.
+- If group size is 2–4: suggest small-group or paired activities. Avoid games that require teams or large numbers.
+- If group size is 5 or more: group games are appropriate.
+
 Include:
 - 3-4 games (REQUIRED — do not return fewer than 3 games)
 - 2-3 crafts
@@ -47,24 +52,24 @@ For each activity, include exactly these fields:
 - questions (array of discussion questions appropriate for the age group)
 
 Use actual children's worship song examples where possible, such as songs from Psalty, Cedarmont Kids, Seeds Family Worship, or classic children's praise music.
-Make sure games and discussion questions are age-appropriate for {{ageRange}} in terms of complexity, and are related to the {{theme}} and/or {{verse}}.
+Make sure games, crafts, and discussion questions are all age-appropriate for {{ageRange}} in terms of complexity and motor skill requirements — crafts must use materials and techniques a child of that age can realistically handle independently. All activities must be suitable for a group of {{groupSize}} — do not suggest games requiring more players than are available.
 Consider weather conditions for indoor/outdoor suggestions. Return as JSON array.
 <!-- END_PROMPT:activities -->
 
 <!-- PROMPT:songs -->
-<!-- PROMPT:songs -->
-Based on theme "{{theme}}", evaluate the provided church repertoire: {{churchSongs}}. Return a JSON object with two keys:
+Based on theme "{{theme}}", select the most fitting songs from the church repertoire: {{churchSongs}}.
+
+Return a JSON object with two keys:
 
 - `recommended`: an array of 3-5 objects selected from the provided repertoire that best fit the theme, ordered best-first.
 - `additional`: an array of 1-2 new song suggestions (not in the provided repertoire) that also fit the theme.
 
-For each recommended or additional song include these fields:
+For each song include these fields:
 - title
 - artist (if known)
 - ccli (if available)
 - tempo (slow, medium, fast)
 - bandRequirements (brief)
-- reason: a short (1-2 sentence) explanation why this song fits the theme
 
 Return exactly one JSON object with `recommended` and `additional` properties.
 <!-- END_PROMPT:songs -->

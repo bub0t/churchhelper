@@ -7,12 +7,12 @@ function isSuperadmin(password: string) {
 }
 
 /**
- * GET /api/admin/pending-churches?password=xxx
+ * POST /api/admin/pending-churches
  * Returns all pending churches with their pending users.
  */
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url)
-  const password = searchParams.get('password') || ''
+export async function POST(request: Request) {
+  const body = await request.json().catch(() => ({}))
+  const password = typeof body?.password === 'string' ? body.password : ''
 
   if (!isSuperadmin(password)) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })

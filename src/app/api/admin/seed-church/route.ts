@@ -12,7 +12,7 @@ import supabase from '@/lib/supabase.server'
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}))
-    const { secret, id, name, location, songs } = body
+    const { secret, id, name, location } = body
 
     const adminSecret = process.env.ADMIN_SECRET
     console.log('[seed-church] ADMIN_SECRET set:', !!adminSecret)
@@ -33,7 +33,6 @@ export async function POST(request: Request) {
       id: id.trim().toLowerCase(),
       name: name || null,
       location: location || null,
-      songs: Array.isArray(songs) ? songs : [],
       status: 'approved',
     }, { onConflict: 'id' })
 

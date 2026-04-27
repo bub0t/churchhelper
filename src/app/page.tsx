@@ -20,8 +20,20 @@ function getNextSundayText() {
   return new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).format(nextSunday)
 }
 
+function getNextServiceDate(serviceDay: string): string {
+  const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday']
+  const target = days.indexOf(serviceDay.toLowerCase())
+  if (target === -1) return ''
+  const today = new Date()
+  const current = today.getDay()
+  const diff = ((target - current + 7) % 7) || 7
+  const next = new Date(today)
+  next.setDate(today.getDate() + diff)
+  return new Intl.DateTimeFormat('en-AU', { weekday: 'long', day: 'numeric', month: 'long' }).format(next)
+}
+
 export default function Home() {
-  const [step, setStep] = useState<'disclaimer' | 'login' | 'register' | 'register-church' | 'forgot-password' | 'admin' | 'verse' | 'verseReview' | 'themeContext' | 'themes' | 'choice' | 'activities' | 'songs' | 'youthDiscussion'>('disclaimer')
+  const [step, setStep] = useState<'disclaimer' | 'about' | 'why-register' | 'login' | 'register' | 'register-church' | 'forgot-password' | 'admin' | 'verse' | 'verseReview' | 'themeContext' | 'themes' | 'choice' | 'activities' | 'songs' | 'youthDiscussion'>('disclaimer')
 
   // multi-verse inputs + aggregated verses array
   const [verse1, setVerse1] = useState('')
@@ -43,6 +55,12 @@ export default function Home() {
   const [isRefreshingSong, setIsRefreshingSong] = useState(false)
   const [discussionQuestions, setDiscussionQuestions] = useState<string[]>([])
   const [regenerateCount, setRegenerateCount] = useState(0)
+  const [songsRegenCount, setSongsRegenCount] = useState(0)
+  const [songsCooldown, setSongsCooldown] = useState(false)
+  const [youthRegenCount, setYouthRegenCount] = useState(0)
+  const [youthCooldown, setYouthCooldown] = useState(false)
+  const REGEN_LIMIT = 3
+  const COOLDOWN_MS = 5000
   const [themeFeedback, setThemeFeedback] = useState('')
   const [weather, setWeather] = useState('')
   const weatherFetchedRef = useRef(false)
@@ -55,11 +73,13 @@ export default function Home() {
 
   // Registration state
   const [regChurchId, setRegChurchId] = useState('')
+  const [regChurchSearch, setRegChurchSearch] = useState('')
   const [regChurchName, setRegChurchName] = useState('')
   const [regUsername, setRegUsername] = useState('')
   const [regEmail, setRegEmail] = useState('')
   const [regPassword, setRegPassword] = useState('')
   const [regPasswordConfirm, setRegPasswordConfirm] = useState('')
+  const [regInviteKey, setRegInviteKey] = useState('')
   const [regChurchLocation, setRegChurchLocation] = useState('')
   const [regServiceDay, setRegServiceDay] = useState('Sunday')
   const [regServiceTime, setRegServiceTime] = useState('10:00')
@@ -81,6 +101,13 @@ export default function Home() {
   const [adminSlugs, setAdminSlugs] = useState<Record<string, string>>({})
   const [adminInviteKeys, setAdminInviteKeys] = useState<Record<string, string>>({})
   const [adminMessage, setAdminMessage] = useState('')
+  // Key lookup state
+  const [keyLookupQuery, setKeyLookupQuery] = useState('')
+  const [keyLookupResults, setKeyLookupResults] = useState<any[]>([])
+  const [keyLookupSelected, setKeyLookupSelected] = useState<{id: string, name: string} | null>(null)
+  const [keyLookupResult, setKeyLookupResult] = useState<string | null>(null)
+  const [keyLookupLoading, setKeyLookupLoading] = useState(false)
+  const [keyLookupError, setKeyLookupError] = useState('')
   const [groupSize, setGroupSize] = useState('')
   const [ageRange, setAgeRange] = useState('5-11')
 
@@ -149,12 +176,52 @@ export default function Home() {
     setStep('themeContext')
   }
 
+  const handleLogout = () => {
+    setUserType(null)
+    setLoginUsername('')
+    setLoginPassword('')
+    setLoginChurchId('')
+    setVerse1('')
+    setVerse2('')
+    setVerse3('')
+    setVerses([])
+    setVersesText([])
+    setRecommendedFamiliar([])
+    setSongs([])
+    setActivities([])
+    setDiscussionQuestions([])
+    setSelectedTheme(null)
+    setSongsRegenCount(0)
+    setSongsCooldown(false)
+    setYouthRegenCount(0)
+    setYouthCooldown(false)
+    setStep('login')
+  }
+
+  const logoutButton = userType !== null ? (
+    <button
+      onClick={handleLogout}
+      className="fixed top-3 right-4 z-50 text-xs text-slate-400 hover:text-slate-700 underline underline-offset-2"
+    >
+      Log out
+    </button>
+  ) : null
+
   const handleStartNewVerses = () => {
     setVerse1('')
     setVerse2('')
     setVerse3('')
     setVerses([])
     setVersesText([])
+    setRecommendedFamiliar([])
+    setSongs([])
+    setActivities([])
+    setDiscussionQuestions([])
+    setSelectedTheme(null)
+    setSongsRegenCount(0)
+    setSongsCooldown(false)
+    setYouthRegenCount(0)
+    setYouthCooldown(false)
     setStep('verse')
   }
 
@@ -309,7 +376,11 @@ export default function Home() {
       return `${verse}+${word}`
     }
     try {
-      const res = await fetch(`/api/admin/pending-churches?password=${encodeURIComponent(password)}`)
+      const res = await fetch('/api/admin/pending-churches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      })
       const json = await res.json()
       if (json.ok) {
         const churches = json.churches || []
@@ -574,8 +645,90 @@ export default function Home() {
 
             <div className="text-center">
               <Button onClick={() => setStep('login')} className="border border-slate-300 shadow-sm text-slate-900">
-                Continue to Login
+                Continue
               </Button>
+            </div>
+
+            <div className="flex justify-center text-sm">
+              <button
+                type="button"
+                className="text-indigo-600 hover:text-indigo-800 underline underline-offset-2"
+                onClick={() => setStep('about')}
+              >
+                About this app
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (step === 'about') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        <Card className="max-w-2xl w-full">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl font-bold text-slate-900">About Church Helper</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5 text-slate-700 text-sm leading-7">
+            <p>
+              <strong>Church Helper</strong>'s goal is to make it easier for more people to serve by giving them a clear place to begin. It supports volunteers who are willing to help but don’t know where to start. After taking time to reflect on the message or Scripture and seeking guidance from the Holy Spirit, volunteers can use the app as a starting point by reviewing suggestions, adapting them, or writing their own ideas as they prepare to serve.
+            </p>
+            <p>You start by entering one or more Bible verses for your upcoming service. Church Helper then suggests themes drawn directly from those passages. Once you choose a theme, you can generate:</p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li><strong>Children's activities</strong> — age-appropriate games, crafts, and questions tailored to your theme, group size, and the weather forecast on your service day.</li>
+              <li><strong>Worship song suggestions</strong> — songs from your church's own repertoire that match your chosen theme. <em>(Registered users only.)</em></li>
+              <li><strong>Youth group discussion questions</strong> — thoughtful prompts for teenagers that connect the theme to real challenges young people face today.</li>
+            </ul>
+            <Alert className="border-amber-200 bg-amber-50 text-amber-900">
+              <div className="flex items-start gap-3">
+                <BookOpen className="mt-1 h-5 w-5 shrink-0 text-amber-700" />
+                <p className="text-sm leading-6">
+                  <strong>A note on discernment:</strong> Church Helper is a starting point, not a decision-maker.
+                  Nothing should replace careful prayer, reflection, and the wisdom of your pastoral team when choosing what activities and messages to bring to your congregation.
+                  Always apply your own judgement before using anything this app suggests.
+                </p>
+              </div>
+            </Alert>
+            <div className="text-center pt-2">
+              <Button onClick={() => setStep('disclaimer')} className="border border-slate-300 shadow-sm text-slate-900">Back</Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (step === 'why-register') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        <Card className="max-w-2xl w-full">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl font-bold text-slate-900">Do I need to register?</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5 text-slate-700 text-sm leading-7">
+            <p>
+              <strong>No — you can use Church Helper as a guest.</strong> Guest access lets you enter verses, choose a theme, and generate children's activities and youth discussion questions without creating an account.
+            </p>
+            <p>
+              <strong>Registering unlocks congregational song suggestions.</strong> When your church registers, you get a shared song database — a list of worship songs your congregation already knows and loves.
+              Church Helper uses that list to suggest songs that match your chosen theme, so you're not starting from scratch every week.
+            </p>
+            <p>
+              Because every congregation is different, the song database is unique to your church. Registered users from the same church all share and contribute to one list, keeping it relevant to your community.
+            </p>
+            <p>
+              If your church isn't registered yet, you can still use Church Helper as a guest to generate children's activities and youth discussion questions — no account needed.
+            </p>
+            <Alert className="border-blue-200 bg-blue-50 text-blue-900">
+              <AlertDescription className="text-sm">
+                <strong>Note:</strong> Registering a new church is currently disabled while we complete further testing.
+                If your church isn't already on Church Helper, please check back soon — we'll open registrations once testing is complete.
+              </AlertDescription>
+            </Alert>
+            <div className="text-center pt-2">
+              <Button onClick={() => setStep('login')} className="border border-slate-300 shadow-sm text-slate-900">Back</Button>
             </div>
           </CardContent>
         </Card>
@@ -586,6 +739,7 @@ export default function Home() {
   if (step === 'verse') {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
+        {logoutButton}
         <div className="max-w-2xl w-full space-y-6">
           <Card className="w-full bg-white text-slate-950">
             <CardHeader>
@@ -629,15 +783,9 @@ export default function Home() {
 
               <div className="flex gap-3">
                 <Button
-                  onClick={() => { /* go back if needed */ setStep('login') }}
-                  className="flex-1 border border-slate-300 shadow-sm text-slate-900"
-                >
-                  Back
-                </Button>
-                <Button
                   onClick={handleVerseSubmit}
                   disabled={!(verse1.trim() || verse2.trim() || verse3.trim()) || isLoading}
-                  className="flex-1 border border-slate-300 shadow-sm text-slate-900"
+                  className="w-full border border-slate-300 shadow-sm text-slate-900"
                 >
                   Continue
                 </Button>
@@ -652,6 +800,7 @@ export default function Home() {
   if (step === 'verseReview') {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
+        {logoutButton}
         <div className="max-w-2xl w-full">
           <Card>
             <CardHeader>
@@ -702,6 +851,7 @@ export default function Home() {
   if (step === 'themeContext') {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
+        {logoutButton}
         <div className="max-w-2xl w-full">
           <Card>
             <CardHeader>
@@ -737,6 +887,7 @@ export default function Home() {
   if (step === 'themes') {
     return (
       <div className="min-h-screen bg-white p-4">
+        {logoutButton}
         <div className="max-w-4xl mx-auto">
           <div className="mb-8">
             <div className="mb-4">
@@ -814,6 +965,7 @@ export default function Home() {
   if (step === 'choice') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        {logoutButton}
         <Card className="max-w-2xl w-full">
           <CardHeader className="text-center">
             <CardTitle className="text-2xl font-bold text-slate-950">What would you like to plan?</CardTitle>
@@ -944,6 +1096,15 @@ export default function Home() {
                 Forgot password?
               </button>
             </div>
+            <div className="text-center text-sm text-slate-400">
+              <button
+                type="button"
+                className="hover:text-slate-600 underline underline-offset-2"
+                onClick={() => setStep('why-register')}
+              >
+                Do I need to register?
+              </button>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -957,6 +1118,7 @@ export default function Home() {
 
     return (
       <div className="min-h-screen bg-white p-4">
+        {logoutButton}
         <div className="max-w-5xl mx-auto space-y-8">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
@@ -968,8 +1130,8 @@ export default function Home() {
                   : 'Fetching weather forecast for next Sunday…'}
               </p>
             </div>
-            <Button onClick={() => setStep('choice')} className="border border-slate-300 bg-white text-slate-950 shadow-sm">
-              Back to planning options
+            <Button onClick={() => setActivities([])} className="border border-slate-300 bg-white text-slate-950 shadow-sm">
+              Back to children's settings
             </Button>
           </div>
 
@@ -1351,6 +1513,7 @@ export default function Home() {
   if (step === 'youthDiscussion') {
     return (
       <div className="min-h-screen bg-white p-4">
+        {logoutButton}
         <div className="max-w-3xl mx-auto space-y-8">
           <div>
             <h1 className="text-3xl font-bold text-slate-950">Youth Group Discussion</h1>
@@ -1369,9 +1532,23 @@ export default function Home() {
             <section className="space-y-4">
               <div className="flex items-center justify-between gap-4">
                 <h2 className="text-xl font-semibold text-slate-950">Discussion Questions</h2>
-                <Button variant="outline" size="sm" onClick={generateDiscussionQuestions}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={youthRegenCount >= REGEN_LIMIT || youthCooldown}
+                  onClick={() => {
+                    if (youthRegenCount >= REGEN_LIMIT || youthCooldown) return
+                    if (youthRegenCount === REGEN_LIMIT - 1) {
+                      if (!confirm('This is your last regeneration for discussion questions. Continue?')) return
+                    }
+                    setYouthRegenCount(c => c + 1)
+                    setYouthCooldown(true)
+                    setTimeout(() => setYouthCooldown(false), COOLDOWN_MS)
+                    generateDiscussionQuestions()
+                  }}
+                >
                   <RefreshCw className="h-4 w-4 mr-2" />
-                  Regenerate
+                  {youthRegenCount >= REGEN_LIMIT ? 'Limit reached' : 'Regenerate'}
                 </Button>
               </div>
               <div className="space-y-3">
@@ -1434,6 +1611,7 @@ export default function Home() {
   if (step === 'songs') {
     return (
       <div className="min-h-screen bg-white p-4 text-slate-950">
+        {logoutButton}
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-slate-950 mb-2">Worship Songs</h1>
@@ -1481,12 +1659,12 @@ export default function Home() {
               <section>
                 <h2 className="text-xl font-semibold text-slate-950 mb-4">New song suggestions</h2>
                 <div className="space-y-4">
-                  {songs.map((song) => (
+                  {songs.map((song, i) => (
                     <Card key={song.id} className="bg-white text-slate-950 border border-slate-200">
                       <CardHeader>
                         <div className="flex items-center justify-between">
                           <CardTitle className="text-lg text-slate-950">{song.title}</CardTitle>
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 items-center">
                             <Badge variant="outline">{song.tempo}</Badge>
                           </div>
                         </div>
@@ -1498,6 +1676,31 @@ export default function Home() {
                   ))}
                 </div>
               </section>
+            )}
+
+            {!isLoading && ( (recommendedFamiliar && recommendedFamiliar.length > 0) || (songs && songs.length > 0) ) && (
+              <div className="flex justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={songsRegenCount >= REGEN_LIMIT || songsCooldown}
+                  onClick={async () => {
+                    if (songsRegenCount >= REGEN_LIMIT || songsCooldown) return
+                    if (songsRegenCount === REGEN_LIMIT - 1) {
+                      if (!confirm('This is your last regeneration for songs. Continue?')) return
+                    }
+                    setRecommendedFamiliar([])
+                    setSongs([])
+                    setSongsRegenCount(c => c + 1)
+                    setSongsCooldown(true)
+                    setTimeout(() => setSongsCooldown(false), COOLDOWN_MS)
+                    await handleSongsGenerate()
+                  }}
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  {songsRegenCount >= REGEN_LIMIT ? 'Limit reached' : 'Regenerate Songs'}
+                </Button>
+              </div>
             )}
 
             {!isLoading && ( (recommendedFamiliar && recommendedFamiliar.length > 0) || (songs && songs.length > 0) ) && (
@@ -1609,31 +1812,72 @@ export default function Home() {
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Your Church</label>
               {hasChurches ? (
-                <select
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md bg-white text-slate-950 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={regChurchId}
-                  onChange={(e) => setRegChurchId(e.target.value)}
-                >
-                  <option value="">Select a church…</option>
-                  {availableChurches.map(c => (
-                    <option key={c.id} value={c.id}>{c.name} — {c.location}</option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search for your church…"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md bg-white text-slate-950 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    value={regChurchSearch}
+                    onChange={(e) => {
+                      setRegChurchSearch(e.target.value)
+                      setRegChurchId('')
+                    }}
+                  />
+                  {regChurchId && (
+                    <p className="mt-1 text-xs text-green-700 font-medium">
+                      ✓ {availableChurches.find(c => c.id === regChurchId)?.name}
+                    </p>
+                  )}
+                  {regChurchSearch.trim().length > 0 && !regChurchId && (() => {
+                    const filtered = availableChurches.filter(c =>
+                      c.name.toLowerCase().includes(regChurchSearch.toLowerCase()) ||
+                      c.location.toLowerCase().includes(regChurchSearch.toLowerCase())
+                    )
+                    return filtered.length > 0 ? (
+                      <ul className="absolute z-10 mt-1 w-full max-h-48 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-lg text-sm">
+                        {filtered.map(c => (
+                          <li
+                            key={c.id}
+                            className="px-3 py-2 cursor-pointer hover:bg-slate-100 text-slate-950"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setRegChurchId(c.id)
+                              setRegChurchSearch(c.name)
+                            }}
+                          >
+                            <span className="font-medium">{c.name}</span>
+                            <span className="text-slate-500 text-xs ml-2">{c.location}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="absolute z-10 mt-1 w-full rounded-md border border-slate-200 bg-white shadow-lg px-3 py-2 text-sm text-slate-500">
+                        No churches found
+                      </div>
+                    )
+                  })()}
+                </div>
               ) : (
                 <p className="text-sm text-slate-500">No churches registered yet.</p>
               )}
-              <button
-                type="button"
-                className="text-sm text-blue-600 hover:underline mt-1"
-                onClick={() => {
-                  setRegError('')
-                  setRegChurchName('')
-                  setRegChurchLocation('')
-                  setStep('register-church')
-                }}
-              >
-                My church isn't listed — register it
-              </button>
+              {process.env.NEXT_PUBLIC_CHURCH_REGISTRATION_ENABLED === 'true' ? (
+                <button
+                  type="button"
+                  className="text-sm text-blue-600 hover:underline mt-1"
+                  onClick={() => {
+                    setRegError('')
+                    setRegChurchName('')
+                    setRegChurchLocation('')
+                    setStep('register-church')
+                  }}
+                >
+                  My church isn't listed — register it
+                </button>
+              ) : (
+                <p className="text-sm text-slate-500 mt-1">
+                  Registering new churches will be available soon after some further testing.
+                </p>
+              )}
             </div>
 
             <div>
@@ -1672,6 +1916,17 @@ export default function Home() {
               />
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Church Invite Key</label>
+              <Input
+                type="password"
+                placeholder="Enter the key provided by your church"
+                value={regInviteKey}
+                onChange={(e) => setRegInviteKey(e.target.value)}
+              />
+              <p className="text-xs text-slate-500 mt-1">Contact your church administrator if you don't have one.</p>
+            </div>
+
             <Alert className="border-blue-200 bg-blue-50 text-blue-900">
               <AlertDescription className="text-sm">
                 <strong>Note:</strong> Song lists are shared per church. All users from the same church share one congregational song database.
@@ -1696,6 +1951,7 @@ export default function Home() {
                         email: regEmail,
                         password: regPassword,
                         churchId: regChurchId,
+                        inviteKey: regInviteKey,
                       }),
                     })
                     const json = await res.json()
@@ -1898,6 +2154,93 @@ export default function Home() {
           >
             Refresh
           </Button>
+
+          {/* Invite Key Lookup */}
+          <div className="rounded-lg border border-slate-700 bg-slate-800 p-5 space-y-3">
+            <h2 className="text-lg font-semibold text-white">Retrieve Church Invite Key</h2>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search for a church..."
+                value={keyLookupQuery}
+                className="w-full rounded-md border border-slate-600 bg-slate-700 text-white placeholder:text-slate-400 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                onChange={async (e) => {
+                  const q = e.target.value
+                  setKeyLookupQuery(q)
+                  setKeyLookupSelected(null)
+                  setKeyLookupResult(null)
+                  setKeyLookupError('')
+                  if (q.trim().length < 2) { setKeyLookupResults([]); return }
+                  try {
+                    const res = await fetch('/api/admin/search-churches', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ password: adminPassword, query: q }),
+                    })
+                    const json = await res.json()
+                    setKeyLookupResults(json.ok ? (json.churches || []) : [])
+                  } catch {}
+                }}
+              />
+              {keyLookupResults.length > 0 && !keyLookupSelected && (
+                <ul className="absolute z-10 mt-1 w-full rounded-md border border-slate-600 bg-slate-700 shadow-lg text-sm">
+                  {keyLookupResults.map((c) => (
+                    <li
+                      key={c.id}
+                      className="px-3 py-2 cursor-pointer hover:bg-slate-600 text-white"
+                      onClick={() => {
+                        setKeyLookupSelected(c)
+                        setKeyLookupQuery(c.name)
+                        setKeyLookupResults([])
+                        setKeyLookupResult(null)
+                        setKeyLookupError('')
+                      }}
+                    >
+                      {c.name} <span className="text-slate-400 text-xs">({c.id})</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <Button
+              className="bg-blue-700 hover:bg-blue-600 text-white border-0"
+              disabled={!keyLookupSelected || keyLookupLoading}
+              onClick={async () => {
+                if (!keyLookupSelected) return
+                setKeyLookupLoading(true)
+                setKeyLookupResult(null)
+                setKeyLookupError('')
+                try {
+                  const res = await fetch('/api/admin/get-invite-key', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: adminPassword, churchId: keyLookupSelected.id }),
+                  })
+                  const json = await res.json()
+                  if (json.ok) {
+                    setKeyLookupResult(json.inviteKey)
+                  } else {
+                    setKeyLookupError(json.error || 'Failed to retrieve key')
+                  }
+                } catch {
+                  setKeyLookupError('Request failed')
+                } finally {
+                  setKeyLookupLoading(false)
+                }
+              }}
+            >
+              {keyLookupLoading ? 'Retrieving...' : 'Get Invite Key'}
+            </Button>
+            {keyLookupResult && (
+              <div className="rounded-md bg-slate-900 border border-slate-600 px-4 py-3">
+                <p className="text-xs text-slate-400 mb-1">Invite key for <strong className="text-slate-200">{keyLookupSelected?.name}</strong></p>
+                <p className="font-mono text-green-400 text-sm select-all">{keyLookupResult}</p>
+              </div>
+            )}
+            {keyLookupError && (
+              <p className="text-red-400 text-sm">{keyLookupError}</p>
+            )}
+          </div>
 
           {pendingChurches.length === 0 ? (
             <div className="text-slate-400 py-12 text-center">No pending registrations.</div>

@@ -125,10 +125,14 @@ export async function POST(request: Request) {
         .eq('id', finalId)
         .maybeSingle()
 
-      await supabase
+      const { error: updateErr } = await supabase
         .from('churches')
         .update({ status: 'approved', invite_key_encrypted: encryptedKey })
         .eq('id', finalId)
+      if (updateErr) {
+        console.error('[approve-church] update error:', updateErr)
+        return NextResponse.json({ ok: false, error: updateErr.message }, { status: 500 })
+      }
       await supabase
         .from('users')
         .update({ status: 'approved' })

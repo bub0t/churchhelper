@@ -56,17 +56,19 @@ export async function ensureSongEmbeddings(userId?: string, songs?: string[]): P
   }
 
   if (supabase && userId) {
-    // Fetch titles already in the shared songs pool
+    // Fetch titles already in the shared songs pool (include embedding to detect nulls)
     const { data: existing, error: selErr } = await supabase
       .from('songs')
-      .select('id, title')
+      .select('id, title, embedding')
       .in('title', sourceSongs)
     if (selErr) throw selErr
 
     const existingMap: Record<string, string> = {}
-    for (const row of existing || []) existingMap[row.title] = row.id
+    for (const row of existing || []) {
+      if (row.embedding) existingMap[row.title] = row.id
+    }
 
-    // Generate embeddings for songs not yet in the shared pool
+    // Generate embeddings for songs not yet in the shared pool, or missing an embedding
     const toCreate = sourceSongs.filter(t => !existingMap[t])
     for (const title of toCreate) {
       const meta = (SONG_METADATA as any)[title] || {}
@@ -178,7 +180,9 @@ export async function getTopKSongsByTheme(theme: string, k = 10, userId?: string
     }
   }
 
-  const scored = emb.map(e => ({ title: e.title, score: cosine(themeVector, e.vector) }))
+  const scored = emb
+    .filter(e => Array.isArray(e.vector) && e.vector.length > 0)
+    .map(e => ({ title: e.title, score: cosine(themeVector, e.vector) }))
   scored.sort((a, b) => b.score - a.score)
   return scored.slice(0, k).map(s => s.title)
 }
@@ -190,80 +194,6 @@ export async function loadEmbeddings(): Promise<StoredEmbedding[] | null> {
   } catch {
     return null
   }
-}
-
-export default {
-  ensureSongEmbeddings,
-  getTopKSongsByTheme,
-  loadEmbeddings,
-}
-
-
-async function embedText(text: string): Promise<number[]> {
-  const res = await openai.embeddings.create({ model: 'text-embedding-3-small', input: text })
-  // @ts-ignore
-  return res.data[0].embedding as number[]
-}
-
-// Build or ensure embeddings for a given user's song list. If userId is provided and Supabase is configured,
-// store embeddings in Supabase scoped to that user. Otherwise store/read from local JSON file.
-export async function ensureSongEmbeddings(userId?: string, songs?: string[]): Promise<StoredEmbedding[]> {
-  const sourceSongs = songs || CBC_SONGS
-
-  // In production, refuse to create or write local embedding files. Require Supabase service key.
-  if (IS_PRODUCTION && !supabase) {
-    throw new Error('Refusing to write embeddings in production without SUPABASE_SERVICE_KEY configured. Provide SUPABASE_SERVICE_KEY to persist embeddings to Supabase.')
-  }
-
-  // If Supabase is configured and userId provided, use Supabase storage
-  if (supabase && userId) {
-    // fetch existing for user
-    const { data: existing, error: selErr } = await supabase.from('song_embeddings').select('title') .eq('user_id', userId)
-    if (selErr) throw selErr
-    const existingTitles = new Set((existing || []).map((r: any) => r.title))
-
-    const toCreate = sourceSongs.filter(t => !existingTitles.has(t))
-    const upserts: any[] = []
-    for (let i = 0; i < toCreate.length; i++) {
-      const title = toCreate[i]
-      const meta = SONG_METADATA[title]
-      const seed = `${title}${meta?.artist ? ' — ' + meta.artist : ''}`
-      const vector = await embedText(seed)
-      upserts.push({ user_id: userId, title, artist: meta?.artist, embedding: vector })
-    }
-
-    if (upserts.length > 0) {
-      const { error: upErr } = await supabase.from('song_embeddings').insert(upserts)
-      if (upErr) throw upErr
-    }
-
-    // return all stored embeddings for user
-    const { data: rows, error: rowsErr } = await supabase.from('song_embeddings').select('title,artist,embedding').eq('user_id', userId)
-    if (rowsErr) throw rowsErr
-    return (rows || []).map((r: any, idx: number) => ({ id: `song-${idx + 1}`, title: r.title, artist: r.artist, vector: r.embedding }))
-  }
-
-  // Fallback: file-based storage
-  try {
-    const existing = await fs.readFile(EMBED_PATH, 'utf8')
-    const parsed: StoredEmbedding[] = JSON.parse(existing)
-    if (parsed.length >= sourceSongs.length) return parsed
-  } catch (e) {
-    // continue to (re)build
-  }
-
-  const out: StoredEmbedding[] = []
-  for (let i = 0; i < sourceSongs.length; i++) {
-    const title = sourceSongs[i]
-    const meta = SONG_METADATA[title]
-    const seed = `${title}${meta?.artist ? ' — ' + meta.artist : ''}`
-    const vector = await embedText(seed)
-    out.push({ id: `song-${i + 1}`, title, artist: meta?.artist, vector })
-  }
-
-  // In production we should never write fallback files (guard above prevents this).
-  await fs.writeFile(EMBED_PATH, JSON.stringify(out, null, 2), 'utf8')
-  return out
 }
 
 export default {
