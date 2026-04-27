@@ -15,7 +15,6 @@ When multiple verses are provided, prioritise themes in this order (fill slots f
 4. Themes grounded in a single provided verse with supporting references from outside passages — lowest priority, only include if slots remain.
 
 When only one verse is provided, all themes must be grounded in that verse (with or without secondary supporting references).
-
 - Return a JSON array of objects. Each object must include the fields: `id` (short unique id), `title` (short), `description` (1-2 sentences), and `covers` (an array of zero-based verse indexes indicating which input verses this theme applies to).
 
 Example output (exact JSON structure):
