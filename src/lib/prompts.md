@@ -10,7 +10,7 @@ Requirements:
 
 When multiple verses are provided, prioritise themes in this order (fill slots from the top down):
 1. Themes that span ALL provided verses AND directly connect to the provided context or feedback — highest priority, aim for at least one.
-2. Themes that span ALL provided verses (covers every verse index) regardless of context — aim for at least two total across priorities 1 and 2.
+2. Themes that span ALL provided verses (covers every verse index) regardless of context — **you must have at least two themes across priorities 1 and 2 combined**.
 3. Themes grounded in a single provided verse (covers one verse index only).
 4. Themes grounded in a single provided verse with supporting references from outside passages — lowest priority, only include if slots remain.
 

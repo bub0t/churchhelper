@@ -20,18 +20,6 @@ function getNextSundayText() {
   return new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).format(nextSunday)
 }
 
-function getNextServiceDate(serviceDay: string): string {
-  const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday']
-  const target = days.indexOf(serviceDay.toLowerCase())
-  if (target === -1) return ''
-  const today = new Date()
-  const current = today.getDay()
-  const diff = ((target - current + 7) % 7) || 7
-  const next = new Date(today)
-  next.setDate(today.getDate() + diff)
-  return new Intl.DateTimeFormat('en-AU', { weekday: 'long', day: 'numeric', month: 'long' }).format(next)
-}
-
 export default function Home() {
   const [step, setStep] = useState<'disclaimer' | 'about' | 'why-register' | 'login' | 'register' | 'register-church' | 'forgot-password' | 'admin' | 'verse' | 'verseReview' | 'themeContext' | 'themes' | 'choice' | 'activities' | 'songs' | 'youthDiscussion'>('disclaimer')
 
@@ -2251,7 +2239,7 @@ export default function Home() {
                   <div className="space-y-1">
                     <div className="text-lg font-semibold text-white">{church.name}</div>
                     <div className="text-slate-400 text-sm">{church.location}</div>
-                    <div className="text-slate-500 text-xs">Submitted: {new Date(church.created_at).toLocaleString()}</div>
+                    <div className="text-slate-500 text-xs">Submitted: {church.createdAt ? new Date(church.createdAt).toLocaleString() : 'Unknown'}</div>
                   </div>
 
                   {church.contactEmail && (

@@ -8,7 +8,7 @@ function isSuperadmin(password: string) {
 
 /**
  * POST /api/admin/pending-churches
- * Returns all pending churches with their pending users.
+ * Returns all pending churches.
  */
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}))
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
 
   const { data: churches, error: cErr } = await supabase
     .from('churches')
-    .select('id, name, location, contact_email, service_day, service_time')
+    .select('id, name, location, contact_email, service_day, service_time, created_at')
     .eq('status', 'pending')
 
   if (cErr) {
@@ -39,6 +39,7 @@ export async function POST(request: Request) {
     contactEmail: church.contact_email || '',
     serviceDay: church.service_day || 'Sunday',
     serviceTime: church.service_time || '10:00',
+    createdAt: church.created_at || null,
   }))
 
   return NextResponse.json({ ok: true, churches: result })
