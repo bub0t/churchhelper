@@ -173,6 +173,7 @@ export default function Home() {
   const [songsCooldown, setSongsCooldown] = useState(false)
   const [youthRegenCount, setYouthRegenCount] = useState(0)
   const [youthCooldown, setYouthCooldown] = useState(false)
+  const [themeDescExpanded, setThemeDescExpanded] = useState(false)
   const REGEN_LIMIT = 3
   const COOLDOWN_MS = 5000
   const [themeFeedback, setThemeFeedback] = useState('')
@@ -1262,55 +1263,71 @@ export default function Home() {
             <div>
               <h1 className="text-3xl font-bold text-slate-950">Children's Activities</h1>
               <p className="text-slate-600">Theme: {selectedTheme?.title}</p>
+              {selectedTheme?.description && (
+                <div className="mt-1">
+                  <button
+                    onClick={() => setThemeDescExpanded(v => !v)}
+                    className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
+                  >
+                    About this theme
+                    {themeDescExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  </button>
+                  {themeDescExpanded && (
+                    <p className="mt-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 max-w-prose">
+                      {selectedTheme.description}
+                    </p>
+                  )}
+                </div>
+              )}
               <p className="text-sm text-slate-700 mt-2">
                 {weather
                   ? weather
                   : 'Fetching weather forecast for next Sunday…'}
               </p>
             </div>
-            <Button onClick={() => setActivities([])} className="border border-slate-300 bg-white text-slate-950 shadow-sm">
-              Back to children's settings
+            <Button onClick={() => { setStep('choice'); setActivities([]); }} className="border border-slate-300 bg-white text-slate-950 shadow-sm">
+              Back
             </Button>
           </div>
 
-          {activities.length === 0 ? (
-            <Card className="max-w-2xl mx-auto">
-              <CardHeader>
-                <CardTitle>Tell us about the children</CardTitle>
-                <CardDescription>We'll generate games, crafts and a song based on their age and group size.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
-                    Group Size
-                  </label>
-                  <Input
-                    type="number"
-                    placeholder="e.g., 15"
-                    value={groupSize}
-                    onChange={(e) => setGroupSize(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
-                    Age Range
-                  </label>
-                  <Input
-                    placeholder="e.g., 5-8 years old"
-                    value={ageRange}
-                    onChange={(e) => setAgeRange(e.target.value)}
-                  />
-                </div>
-                <Button
-                  onClick={handleActivitiesSubmit}
-                  disabled={!groupSize || !ageRange || isLoading}
-                  className="w-full border border-slate-300 shadow-sm text-slate-900"
-                >
-                  {isLoading ? 'Generating Activities...' : 'Generate Activities'}
-                </Button>
-              </CardContent>
-            </Card>
-          ) : (
+          <Card className="max-w-2xl mx-auto">
+            <CardHeader>
+              <CardTitle>Tell us about the children</CardTitle>
+              <CardDescription>We'll generate games, crafts and a song based on their age and group size.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Group Size
+                </label>
+                <Input
+                  type="number"
+                  placeholder="e.g., 15"
+                  value={groupSize}
+                  onChange={(e) => setGroupSize(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Age Range
+                </label>
+                <Input
+                  placeholder="e.g., 5-8 years old"
+                  value={ageRange}
+                  onChange={(e) => setAgeRange(e.target.value)}
+                />
+              </div>
+              <Button
+                onClick={handleActivitiesSubmit}
+                disabled={!groupSize || !ageRange || isLoading}
+                className="w-full border border-slate-300 shadow-sm text-slate-900"
+              >
+                {isLoading ? 'Generating Activities...' : activities.length > 0 ? 'Regenerate Activities' : 'Generate Activities'}
+              </Button>
+            </CardContent>
+          </Card>
+
+          {activities.length > 0 && (
             <div className="space-y-12">
               {/* ... activities rendering unchanged ... */}
               {/* keep remaining code as before */}
@@ -1364,8 +1381,8 @@ export default function Home() {
                       <CardHeader className="cursor-pointer hover:bg-slate-50 transition-colors">
                         <div className="flex items-start justify-between gap-4">
                           <div>
-                            <CardTitle className="text-lg text-slate-950">{activity.title}</CardTitle>
-                            <CardDescription className="text-slate-600">{activity.description}</CardDescription>
+                            <CardTitle className="text-base text-slate-950">{activity.title}</CardTitle>
+                            <CardDescription className="text-base text-slate-600">{activity.description}</CardDescription>
                           </div>
                           <div className="flex items-center gap-2">
                             <Badge variant={
@@ -1386,13 +1403,11 @@ export default function Home() {
                             <div className="mb-4">
                               <h4 className="font-semibold mb-2">How this connects to the theme</h4>
                               <p className="text-slate-700">{activity.themeRelation}</p>
-                              <p className="text-sm text-slate-600 mt-2">Designed for {ageRange || 'the selected age group'} with age-appropriate theme focus.</p>
                             </div>
                           ) : (
                             <div className="mb-4">
                               <h4 className="font-semibold mb-2">How this connects to the theme</h4>
                               <p className="text-slate-700">This activity supports the current theme and is created to be suitable for the selected age group.</p>
-                              <p className="text-sm text-slate-600 mt-2">Designed for {ageRange || 'the selected age group'} with age-appropriate theme focus.</p>
                             </div>
                           )}
 
@@ -1493,8 +1508,8 @@ export default function Home() {
                       <CardHeader className="cursor-pointer hover:bg-slate-50 transition-colors">
                         <div className="flex items-start justify-between gap-4">
                           <div>
-                            <CardTitle className="text-lg text-slate-950">{activity.title}</CardTitle>
-                            <CardDescription className="text-slate-600">{activity.description}</CardDescription>
+                            <CardTitle className="text-base text-slate-950">{activity.title}</CardTitle>
+                            <CardDescription className="text-base text-slate-600">{activity.description}</CardDescription>
                           </div>
                           <div className="flex items-center gap-2">
                             <Badge variant={activity.activityLevel === 'laid-back' ? 'secondary' : activity.activityLevel === 'moderate' ? 'default' : 'destructive'}>
@@ -1593,8 +1608,8 @@ export default function Home() {
                         <CardHeader className="cursor-pointer hover:bg-slate-50 transition-colors">
                           <div className="flex items-start justify-between gap-4">
                             <div>
-                              <CardTitle className="text-lg text-slate-950">{activity.title}</CardTitle>
-                              <CardDescription className="text-slate-600">{activity.description}</CardDescription>
+                              <CardTitle className="text-base text-slate-950">{activity.title}</CardTitle>
+                              <CardDescription className="text-base text-slate-600">{activity.description}</CardDescription>
                             </div>
                             {activity.expanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
                           </div>
@@ -1659,7 +1674,22 @@ export default function Home() {
           <div>
             <h1 className="text-3xl font-bold text-slate-950">Youth Group Discussion</h1>
             <p className="text-slate-600">Theme: {selectedTheme?.title}</p>
-            <p className="text-sm text-slate-500 mt-1">For secondary school students aged 12–18</p>
+            {selectedTheme?.description && (
+              <div className="mt-1">
+                <button
+                  onClick={() => setThemeDescExpanded(v => !v)}
+                  className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
+                >
+                  About this theme
+                  {themeDescExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </button>
+                {themeDescExpanded && (
+                  <p className="mt-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 max-w-prose">
+                    {selectedTheme.description}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {isLoading && (
@@ -1672,7 +1702,10 @@ export default function Home() {
           {!isLoading && discussionQuestions.length > 0 && (
             <section className="space-y-4">
               <div className="flex items-center justify-between gap-4">
-                <h2 className="text-xl font-semibold text-slate-950">Discussion Questions</h2>
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-950">Discussion Questions</h2>
+                  <p className="text-sm text-slate-500 mt-0.5">For secondary school students aged 12–18</p>
+                </div>
                 <Button
                   variant="outline"
                   size="sm"
@@ -1754,9 +1787,25 @@ export default function Home() {
     return (
       <div className="min-h-screen bg-white p-4 text-slate-950">
         <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-8">
+          <div className="mb-8">
             <h1 className="text-3xl font-bold text-slate-950 mb-2">Worship Songs</h1>
             <p className="text-slate-700">Theme: {selectedTheme?.title}</p>
+            {selectedTheme?.description && (
+              <div className="mt-1">
+                <button
+                  onClick={() => setThemeDescExpanded(v => !v)}
+                  className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
+                >
+                  About this theme
+                  {themeDescExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </button>
+                {themeDescExpanded && (
+                  <p className="mt-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 max-w-prose">
+                    {selectedTheme.description}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="space-y-8">
@@ -1777,7 +1826,7 @@ export default function Home() {
                       <Card key={`familiar-${i}`} className="bg-white text-slate-950 border border-slate-200">
                         <CardHeader>
                           <div className="flex items-center justify-between">
-                            <CardTitle className="text-lg text-slate-950">{song.title}</CardTitle>
+                            <CardTitle className="text-base text-slate-950">{song.title}</CardTitle>
                             <div className="flex gap-2 items-center">
                               { (song.isHymn || meta?.isHymn) && (
                                 <Badge variant="secondary" className="bg-amber-100 text-amber-800">Hymn</Badge>
@@ -1786,7 +1835,7 @@ export default function Home() {
                             </div>
                           </div>
                           {(song.artist || meta?.artist) && (
-                            <CardDescription className="text-slate-700">{song.artist || meta?.artist}</CardDescription>
+                            <CardDescription className="text-base text-slate-700">{song.artist || meta?.artist}</CardDescription>
                           )}
                         </CardHeader>
                       </Card>
@@ -1804,13 +1853,13 @@ export default function Home() {
                     <Card key={song.id} className="bg-white text-slate-950 border border-slate-200">
                       <CardHeader>
                         <div className="flex items-center justify-between">
-                          <CardTitle className="text-lg text-slate-950">{song.title}</CardTitle>
+                          <CardTitle className="text-base text-slate-950">{song.title}</CardTitle>
                           <div className="flex gap-2 items-center">
                             <Badge variant="outline">{song.tempo}</Badge>
                           </div>
                         </div>
                         {song.artist && (
-                          <CardDescription className="text-slate-700">{song.artist}</CardDescription>
+                          <CardDescription className="text-base text-slate-700">{song.artist}</CardDescription>
                         )}
                       </CardHeader>
                     </Card>

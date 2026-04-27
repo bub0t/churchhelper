@@ -102,8 +102,14 @@ export async function GET(request: Request) {
 
         let weatherStr = temp != null ? `${label}: ${description}, ${temp}°C` : `${label}: ${description}`
 
-        if (rain3h > 0 || pop >= 0.5) {
-          weatherStr += ' — indoor activities recommended (rain expected, ground may be wet)'
+        const precipParts: string[] = []
+        if (rain3h > 0) precipParts.push(`${rain3h.toFixed(1)}mm expected (3h window)`)
+        if (pop > 0) precipParts.push(`${Math.round(pop * 100)}% chance of rain`)
+
+        if (precipParts.length > 0) {
+          weatherStr += `. Precipitation: ${precipParts.join(', ')}. Ground likely wet — indoor activities recommended.`
+        } else {
+          weatherStr += '. No rain expected — outdoor activities suitable.'
         }
 
         return NextResponse.json({ weather: weatherStr })
@@ -129,7 +135,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ weather: weatherStr })
     }
 
-    // No service params: return current conditions as before
+    // No service params: return current conditions with location label
     const currentUrl = `https://api.openweathermap.org/data/2.5/weather?q=${encoded}&units=metric&appid=${apiKey}`
     const currentRes = await fetch(currentUrl)
     if (!currentRes.ok) throw new Error('Weather API error')
@@ -137,12 +143,19 @@ export async function GET(request: Request) {
 
     const description = currentData.weather?.[0]?.description || 'mild conditions'
     const temp = currentData.main?.temp != null ? Math.round(currentData.main.temp) : null
-    const rain1h = currentData.rain?.['1h'] ?? 0
-    const rain3h = currentData.rain?.['3h'] ?? 0
+    const rain1h: number = currentData.rain?.['1h'] ?? 0
+    const rain3h: number = currentData.rain?.['3h'] ?? 0
 
-    let weatherStr = temp != null ? `${description}, ${temp}°C` : description
-    if (rain3h > 0 || rain1h > 0) {
-      weatherStr += '; rain recorded recently — ground may be wet'
+    let weatherStr = `Current conditions in ${location}: ${temp != null ? `${description}, ${temp}°C` : description}`
+
+    const precipParts: string[] = []
+    if (rain1h > 0) precipParts.push(`${rain1h.toFixed(1)}mm in last 1h`)
+    if (rain3h > 0) precipParts.push(`${rain3h.toFixed(1)}mm in last 3h`)
+
+    if (precipParts.length > 0) {
+      weatherStr += `. Recent rainfall: ${precipParts.join(', ')}. Ground may be wet — indoor activities recommended.`
+    } else {
+      weatherStr += '. No recent rain — outdoor activities suitable.'
     }
 
     return NextResponse.json({ weather: weatherStr })

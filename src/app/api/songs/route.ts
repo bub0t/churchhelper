@@ -89,6 +89,7 @@ export async function POST(request: Request) {
     if (hymns.length < 2) {
       for (const h of hymnsAvailable) {
         if (hymns.find(x => x.title === h)) continue
+        if (excludedTitles.includes(h.toLowerCase())) continue
         const meta = getMeta(h)
         hymns.push({ id: `repl-hymn-${h}`, title: h, artist: meta?.artist, tempo: meta?.tempo || 'slow', bandRequirements: meta?.bandRequirements || 'Hymn' })
         if (hymns.length >= 2) break
