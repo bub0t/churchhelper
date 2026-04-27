@@ -20,8 +20,20 @@ function getNextSundayText() {
   return new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).format(nextSunday)
 }
 
+function getNextServiceDate(serviceDay: string): string {
+  const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday']
+  const target = days.indexOf(serviceDay.toLowerCase())
+  if (target === -1) return ''
+  const today = new Date()
+  const current = today.getDay()
+  const diff = ((target - current + 7) % 7) || 7
+  const next = new Date(today)
+  next.setDate(today.getDate() + diff)
+  return new Intl.DateTimeFormat('en-AU', { weekday: 'long', day: 'numeric', month: 'long' }).format(next)
+}
+
 export default function Home() {
-  const [step, setStep] = useState<'disclaimer' | 'login' | 'verse' | 'verseReview' | 'themeContext' | 'themes' | 'choice' | 'activities' | 'songs' | 'youthDiscussion'>('disclaimer')
+  const [step, setStep] = useState<'disclaimer' | 'about' | 'why-register' | 'login' | 'register' | 'register-church' | 'forgot-password' | 'admin' | 'verse' | 'verseReview' | 'themeContext' | 'themes' | 'choice' | 'activities' | 'songs' | 'youthDiscussion'>('disclaimer')
 
   // multi-verse inputs + aggregated verses array
   const [verse1, setVerse1] = useState('')
@@ -43,13 +55,94 @@ export default function Home() {
   const [isRefreshingSong, setIsRefreshingSong] = useState(false)
   const [discussionQuestions, setDiscussionQuestions] = useState<string[]>([])
   const [regenerateCount, setRegenerateCount] = useState(0)
+  const [songsRegenCount, setSongsRegenCount] = useState(0)
+  const [songsCooldown, setSongsCooldown] = useState(false)
+  const [youthRegenCount, setYouthRegenCount] = useState(0)
+  const [youthCooldown, setYouthCooldown] = useState(false)
+  const REGEN_LIMIT = 3
+  const COOLDOWN_MS = 5000
   const [themeFeedback, setThemeFeedback] = useState('')
   const [weather, setWeather] = useState('')
   const weatherFetchedRef = useRef(false)
   const [loginUsername, setLoginUsername] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
+  const [loginChurchId, setLoginChurchId] = useState('')
+  const [churchLocation, setChurchLocation] = useState('Canterbury, Victoria, Australia')
+  const [churchServiceDay, setChurchServiceDay] = useState('Sunday')
+  const [churchServiceTime, setChurchServiceTime] = useState('10:00')
+
+  // Registration state
+  const [regChurchId, setRegChurchId] = useState('')
+  const [regChurchSearch, setRegChurchSearch] = useState('')
+  const [regChurchName, setRegChurchName] = useState('')
+  const [regUsername, setRegUsername] = useState('')
+  const [regEmail, setRegEmail] = useState('')
+  const [regPassword, setRegPassword] = useState('')
+  const [regPasswordConfirm, setRegPasswordConfirm] = useState('')
+  const [regInviteKey, setRegInviteKey] = useState('')
+  const [regChurchLocation, setRegChurchLocation] = useState('')
+  const [regServiceDay, setRegServiceDay] = useState('Sunday')
+  const [regServiceTime, setRegServiceTime] = useState('10:00')
+  const [regError, setRegError] = useState('')
+  const [suburbQuery, setSuburbQuery] = useState('')
+  const [suburbSuggestions, setSuburbSuggestions] = useState<string[]>([])
+  const [suburbLoading, setSuburbLoading] = useState(false)
+  const [suburbSelected, setSuburbSelected] = useState(false)
+  const suburbDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [availableChurches, setAvailableChurches] = useState<{id: string, name: string, location: string}[]>([])
+
+  // Forgot password state
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [forgotSent, setForgotSent] = useState(false)
+
+  // Admin (superadmin) state
+  const [adminPassword, setAdminPassword] = useState('')
+  const [pendingChurches, setPendingChurches] = useState<any[]>([])
+  const [adminSlugs, setAdminSlugs] = useState<Record<string, string>>({})
+  const [adminInviteKeys, setAdminInviteKeys] = useState<Record<string, string>>({})
+  const [adminMessage, setAdminMessage] = useState('')
+  // Key lookup state
+  const [keyLookupQuery, setKeyLookupQuery] = useState('')
+  const [keyLookupResults, setKeyLookupResults] = useState<any[]>([])
+  const [keyLookupSelected, setKeyLookupSelected] = useState<{id: string, name: string} | null>(null)
+  const [keyLookupResult, setKeyLookupResult] = useState<string | null>(null)
+  const [keyLookupLoading, setKeyLookupLoading] = useState(false)
+  const [keyLookupError, setKeyLookupError] = useState('')
   const [groupSize, setGroupSize] = useState('')
   const [ageRange, setAgeRange] = useState('5-11')
+
+  const handleSuburbInput = (value: string) => {
+    setSuburbQuery(value)
+    setRegChurchLocation(value)
+    setSuburbSelected(false)
+    setSuburbSuggestions([])
+    if (suburbDebounceRef.current) clearTimeout(suburbDebounceRef.current)
+    if (value.trim().length < 2) return
+    suburbDebounceRef.current = setTimeout(async () => {
+      setSuburbLoading(true)
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=6&q=${encodeURIComponent(value + ', Australia')}&featuretype=settlement`
+        const res = await fetch(url, { headers: { 'Accept-Language': 'en', 'User-Agent': 'ChurchHelperApp/1.0' } })
+        const data = await res.json()
+        const suggestions: string[] = []
+        for (const item of data) {
+          const a = item.address || {}
+          const suburb = a.suburb || a.village || a.town || a.city || a.municipality || ''
+          const state = a.state || ''
+          const country = a.country || ''
+          if (suburb && state && country) {
+            const label = `${suburb}, ${state}, ${country}`
+            if (!suggestions.includes(label)) suggestions.push(label)
+          }
+        }
+        setSuburbSuggestions(suggestions)
+      } catch {
+        // silently ignore network errors
+      } finally {
+        setSuburbLoading(false)
+      }
+    }, 400)
+  }
 
   // Collect verses and go to review (no API call here)
   const handleVerseSubmit = async () => {
@@ -83,12 +176,52 @@ export default function Home() {
     setStep('themeContext')
   }
 
+  const handleLogout = () => {
+    setUserType(null)
+    setLoginUsername('')
+    setLoginPassword('')
+    setLoginChurchId('')
+    setVerse1('')
+    setVerse2('')
+    setVerse3('')
+    setVerses([])
+    setVersesText([])
+    setRecommendedFamiliar([])
+    setSongs([])
+    setActivities([])
+    setDiscussionQuestions([])
+    setSelectedTheme(null)
+    setSongsRegenCount(0)
+    setSongsCooldown(false)
+    setYouthRegenCount(0)
+    setYouthCooldown(false)
+    setStep('login')
+  }
+
+  const logoutButton = userType !== null ? (
+    <button
+      onClick={handleLogout}
+      className="fixed top-3 right-4 z-50 text-xs text-slate-400 hover:text-slate-700 underline underline-offset-2"
+    >
+      Log out
+    </button>
+  ) : null
+
   const handleStartNewVerses = () => {
     setVerse1('')
     setVerse2('')
     setVerse3('')
     setVerses([])
     setVersesText([])
+    setRecommendedFamiliar([])
+    setSongs([])
+    setActivities([])
+    setDiscussionQuestions([])
+    setSelectedTheme(null)
+    setSongsRegenCount(0)
+    setSongsCooldown(false)
+    setYouthRegenCount(0)
+    setYouthCooldown(false)
     setStep('verse')
   }
 
@@ -196,45 +329,117 @@ export default function Home() {
   const handleLogin = async () => {
     try {
       const normalizedUsername = loginUsername.trim().toLowerCase()
-      // Try Supabase Auth sign-in first
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: normalizedUsername,
-        password: loginPassword,
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: normalizedUsername, password: loginPassword }),
       })
+      const json = await res.json()
 
-      if (error) {
-        console.warn('Supabase sign-in error', error)
-        // Fallback to server-side route (handles DB-hashed password or dev fallback)
-        const res = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: normalizedUsername, password: loginPassword }),
-        })
-        if (res.ok) {
-          const json = await res.json()
-          if (json.ok) {
-            setUserType('advanced')
-            setStep('verse')
-            return
-          }
+      if (!res.ok || !json.ok) {
+        if (res.status === 403 && json.reason === 'pending') {
+          alert('Your registration is pending admin approval. You will be notified when approved.')
+        } else {
+          alert('Invalid credentials')
         }
-        alert('Invalid credentials')
         return
       }
 
-      // On success, set loginUsername to the authenticated user's id so downstream routes can reference it
-      const user = (data as any)?.user
-      if (user) {
-        setLoginUsername(user.id || user.email || loginUsername.trim())
-        setUserType('advanced')
-        setStep('verse')
+      if (json.role === 'superadmin') {
+        setAdminPassword(loginPassword)
+        setLoginPassword('')
+        setLoginUsername('')
+        await loadPendingChurches(loginPassword)
+        setStep('admin')
         return
       }
 
-      alert('Login failed')
+      setLoginUsername(normalizedUsername)
+      setLoginChurchId(json.churchId || normalizedUsername)
+      if (json.churchLocation) setChurchLocation(json.churchLocation)
+      if (json.serviceDay) setChurchServiceDay(json.serviceDay)
+      if (json.serviceTime) setChurchServiceTime(json.serviceTime)
+      setUserType('advanced')
+      setStep('verse')
     } catch (e) {
       console.error('Login error', e)
       alert('Login failed')
+    }
+  }
+
+  const loadPendingChurches = async (password: string) => {
+    const INVITE_VERSES = ['John3:16','Psalm23','Romans8:28','Proverbs3:5','Isaiah40:31','Philippians4:13','Jeremiah29:11','Matthew6:33','Galatians5:22','Hebrews11:1','Psalm46:10','John14:6','Romans5:8','Ephesians2:8','Joshua1:9']
+    const INVITE_WORDS = ['Grace','Peace','Joy','Hope','Faith','Love','Light','Jordan','Zion','Bethel','Shalom','Moses','Elijah','Salvation','Praise','Glory','Refuge','Canaan','Lamb','Shepherd']
+    const suggestKey = () => {
+      const verse = INVITE_VERSES[Math.floor(Math.random() * INVITE_VERSES.length)]
+      const word = INVITE_WORDS[Math.floor(Math.random() * INVITE_WORDS.length)]
+      return `${verse}+${word}`
+    }
+    try {
+      const res = await fetch('/api/admin/pending-churches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      })
+      const json = await res.json()
+      if (json.ok) {
+        const churches = json.churches || []
+        setPendingChurches(churches)
+        const slugs: Record<string, string> = {}
+        const keys: Record<string, string> = {}
+        for (const c of churches) {
+          slugs[c.id] = c.id
+          keys[c.id] = suggestKey()
+        }
+        setAdminSlugs(slugs)
+        setAdminInviteKeys(keys)
+      }
+    } catch (e) {
+      console.error('Failed to load pending churches', e)
+    }
+  }
+
+  const handleApproveChurch = async (pendingId: string) => {
+    const approvedId = (adminSlugs[pendingId] || pendingId).trim().toLowerCase()
+    const inviteKey = (adminInviteKeys[pendingId] || '').trim()
+    if (!inviteKey) { setAdminMessage('Please set an invite key before approving.'); return }
+    setAdminMessage('')
+    try {
+      const res = await fetch('/api/admin/approve-church', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: adminPassword, pendingId, approvedId, inviteKey }),
+      })
+      const json = await res.json()
+      if (json.ok) {
+        setPendingChurches(prev => prev.filter(c => c.id !== pendingId))
+        setAdminMessage(`Approved: ${approvedId}`)
+      } else {
+        setAdminMessage(`Error: ${json.error}`)
+      }
+    } catch (e) {
+      setAdminMessage('Failed to approve church')
+    }
+  }
+
+  const handleRejectChurch = async (churchId: string) => {
+    if (!confirm(`Reject and delete "${churchId}" and all its pending users?`)) return
+    setAdminMessage('')
+    try {
+      const res = await fetch('/api/admin/reject-church', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: adminPassword, churchId }),
+      })
+      const json = await res.json()
+      if (json.ok) {
+        setPendingChurches(prev => prev.filter(c => c.id !== churchId))
+        setAdminMessage(`Rejected: ${churchId}`)
+      } else {
+        setAdminMessage(`Error: ${json.error}`)
+      }
+    } catch (e) {
+      setAdminMessage('Failed to reject church')
     }
   }
 
@@ -330,7 +535,7 @@ export default function Home() {
       const response = await fetch('/api/songs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ theme: selectedTheme.title, userId: (loginUsername || 'CBC') }),
+        body: JSON.stringify({ theme: selectedTheme.title, userId: (loginChurchId || loginUsername || 'CBC') }),
       })
       const data = await response.json()
       const rec = data.recommended || []
@@ -380,7 +585,12 @@ export default function Home() {
   useEffect(() => {
     if (step === 'choice' && !weatherFetchedRef.current) {
       weatherFetchedRef.current = true
-      fetch('/api/weather?location=Canterbury%2C%20Victoria%2C%20Australia')
+      const params = new URLSearchParams({
+        location: churchLocation,
+        serviceDay: churchServiceDay,
+        serviceTime: churchServiceTime,
+      })
+      fetch(`/api/weather?${params}`)
         .then(r => r.json())
         .then(data => { setWeather(data.weather || 'Sunny and mild') })
         .catch(() => { setWeather('Sunny and mild') })
@@ -435,8 +645,90 @@ export default function Home() {
 
             <div className="text-center">
               <Button onClick={() => setStep('login')} className="border border-slate-300 shadow-sm text-slate-900">
-                Continue to Login
+                Continue
               </Button>
+            </div>
+
+            <div className="flex justify-center text-sm">
+              <button
+                type="button"
+                className="text-indigo-600 hover:text-indigo-800 underline underline-offset-2"
+                onClick={() => setStep('about')}
+              >
+                About this app
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (step === 'about') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        <Card className="max-w-2xl w-full">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl font-bold text-slate-900">About Church Helper</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5 text-slate-700 text-sm leading-7">
+            <p>
+              <strong>Church Helper</strong>'s goal is to make it easier for more people to serve by giving them a clear place to begin. It supports volunteers who are willing to help but don’t know where to start. After taking time to reflect on the message or Scripture and seeking guidance from the Holy Spirit, volunteers can use the app as a starting point by reviewing suggestions, adapting them, or writing their own ideas as they prepare to serve.
+            </p>
+            <p>You start by entering one or more Bible verses for your upcoming service. Church Helper then suggests themes drawn directly from those passages. Once you choose a theme, you can generate:</p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li><strong>Children's activities</strong> — age-appropriate games, crafts, and questions tailored to your theme, group size, and the weather forecast on your service day.</li>
+              <li><strong>Worship song suggestions</strong> — songs from your church's own repertoire that match your chosen theme. <em>(Registered users only.)</em></li>
+              <li><strong>Youth group discussion questions</strong> — thoughtful prompts for teenagers that connect the theme to real challenges young people face today.</li>
+            </ul>
+            <Alert className="border-amber-200 bg-amber-50 text-amber-900">
+              <div className="flex items-start gap-3">
+                <BookOpen className="mt-1 h-5 w-5 shrink-0 text-amber-700" />
+                <p className="text-sm leading-6">
+                  <strong>A note on discernment:</strong> Church Helper is a starting point, not a decision-maker.
+                  Nothing should replace careful prayer, reflection, and the wisdom of your pastoral team when choosing what activities and messages to bring to your congregation.
+                  Always apply your own judgement before using anything this app suggests.
+                </p>
+              </div>
+            </Alert>
+            <div className="text-center pt-2">
+              <Button onClick={() => setStep('disclaimer')} className="border border-slate-300 shadow-sm text-slate-900">Back</Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (step === 'why-register') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        <Card className="max-w-2xl w-full">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl font-bold text-slate-900">Do I need to register?</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5 text-slate-700 text-sm leading-7">
+            <p>
+              <strong>No — you can use Church Helper as a guest.</strong> Guest access lets you enter verses, choose a theme, and generate children's activities and youth discussion questions without creating an account.
+            </p>
+            <p>
+              <strong>Registering unlocks congregational song suggestions.</strong> When your church registers, you get a shared song database — a list of worship songs your congregation already knows and loves.
+              Church Helper uses that list to suggest songs that match your chosen theme, so you're not starting from scratch every week.
+            </p>
+            <p>
+              Because every congregation is different, the song database is unique to your church. Registered users from the same church all share and contribute to one list, keeping it relevant to your community.
+            </p>
+            <p>
+              If your church isn't registered yet, you can still use Church Helper as a guest to generate children's activities and youth discussion questions — no account needed.
+            </p>
+            <Alert className="border-blue-200 bg-blue-50 text-blue-900">
+              <AlertDescription className="text-sm">
+                <strong>Note:</strong> Registering a new church is currently disabled while we complete further testing.
+                If your church isn't already on Church Helper, please check back soon — we'll open registrations once testing is complete.
+              </AlertDescription>
+            </Alert>
+            <div className="text-center pt-2">
+              <Button onClick={() => setStep('login')} className="border border-slate-300 shadow-sm text-slate-900">Back</Button>
             </div>
           </CardContent>
         </Card>
@@ -447,6 +739,7 @@ export default function Home() {
   if (step === 'verse') {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
+        {logoutButton}
         <div className="max-w-2xl w-full space-y-6">
           <Card className="w-full bg-white text-slate-950">
             <CardHeader>
@@ -490,15 +783,9 @@ export default function Home() {
 
               <div className="flex gap-3">
                 <Button
-                  onClick={() => { /* go back if needed */ setStep('login') }}
-                  className="flex-1 border border-slate-300 shadow-sm text-slate-900"
-                >
-                  Back
-                </Button>
-                <Button
                   onClick={handleVerseSubmit}
                   disabled={!(verse1.trim() || verse2.trim() || verse3.trim()) || isLoading}
-                  className="flex-1 border border-slate-300 shadow-sm text-slate-900"
+                  className="w-full border border-slate-300 shadow-sm text-slate-900"
                 >
                   Continue
                 </Button>
@@ -513,6 +800,7 @@ export default function Home() {
   if (step === 'verseReview') {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
+        {logoutButton}
         <div className="max-w-2xl w-full">
           <Card>
             <CardHeader>
@@ -563,6 +851,7 @@ export default function Home() {
   if (step === 'themeContext') {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
+        {logoutButton}
         <div className="max-w-2xl w-full">
           <Card>
             <CardHeader>
@@ -598,6 +887,7 @@ export default function Home() {
   if (step === 'themes') {
     return (
       <div className="min-h-screen bg-white p-4">
+        {logoutButton}
         <div className="max-w-4xl mx-auto">
           <div className="mb-8">
             <div className="mb-4">
@@ -675,12 +965,16 @@ export default function Home() {
   if (step === 'choice') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        {logoutButton}
         <Card className="max-w-2xl w-full">
           <CardHeader className="text-center">
             <CardTitle className="text-2xl font-bold text-slate-950">What would you like to plan?</CardTitle>
             <CardDescription>
               Selected theme: {selectedTheme?.title}
             </CardDescription>
+            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mt-2">
+              💡 <strong>Tip:</strong> Take a screenshot or copy your results — they won&apos;t be saved and may be lost while navigating through the app.
+            </p>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid md:grid-cols-2 gap-4">
@@ -749,15 +1043,17 @@ export default function Home() {
           <CardContent className="space-y-6">
             <div className="space-y-4">
               <Input
-                placeholder="User"
+                placeholder="Username or email"
                 value={loginUsername}
                 onChange={(e) => setLoginUsername(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleLogin() }}
               />
               <Input
                 type="password"
                 placeholder="Password"
                 value={loginPassword}
                 onChange={(e) => setLoginPassword(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleLogin() }}
               />
             </div>
 
@@ -768,6 +1064,46 @@ export default function Home() {
               <Button variant="outline" onClick={() => { setUserType('basic'); setStep('verse') }} className="flex-1 border border-slate-300 shadow-sm text-slate-900">
                 Continue as Guest
               </Button>
+            </div>
+
+            <div className="flex justify-between text-sm text-slate-500">
+              <button
+                type="button"
+                className="hover:text-slate-800 underline"
+                onClick={async () => {
+                  setRegError('')
+                  setAvailableChurches([])
+                  setRegChurchId('')
+                  setRegUsername('')
+                  setRegEmail('')
+                  setRegPassword('')
+                  setRegPasswordConfirm('')
+                  try {
+                    const res = await fetch('/api/churches/list')
+                    const json = await res.json()
+                    if (json.ok) setAvailableChurches(json.churches || [])
+                  } catch {}
+                  setStep('register')
+                }}
+              >
+                Register
+              </button>
+              <button
+                type="button"
+                className="hover:text-slate-800 underline"
+                onClick={() => { setForgotEmail(''); setForgotSent(false); setStep('forgot-password') }}
+              >
+                Forgot password?
+              </button>
+            </div>
+            <div className="text-center text-sm text-slate-400">
+              <button
+                type="button"
+                className="hover:text-slate-600 underline underline-offset-2"
+                onClick={() => setStep('why-register')}
+              >
+                Do I need to register?
+              </button>
             </div>
           </CardContent>
         </Card>
@@ -782,6 +1118,7 @@ export default function Home() {
 
     return (
       <div className="min-h-screen bg-white p-4">
+        {logoutButton}
         <div className="max-w-5xl mx-auto space-y-8">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
@@ -789,12 +1126,12 @@ export default function Home() {
               <p className="text-slate-600">Theme: {selectedTheme?.title}</p>
               <p className="text-sm text-slate-700 mt-2">
                 {weather
-                  ? `It will be ${weather} in Canterbury on ${getNextSundayText()} at 10:00 am.`
+                  ? weather
                   : 'Fetching weather forecast for next Sunday…'}
               </p>
             </div>
-            <Button onClick={() => setStep('choice')} className="border border-slate-300 bg-white text-slate-950 shadow-sm">
-              Back to planning options
+            <Button onClick={() => setActivities([])} className="border border-slate-300 bg-white text-slate-950 shadow-sm">
+              Back to children's settings
             </Button>
           </div>
 
@@ -1176,6 +1513,7 @@ export default function Home() {
   if (step === 'youthDiscussion') {
     return (
       <div className="min-h-screen bg-white p-4">
+        {logoutButton}
         <div className="max-w-3xl mx-auto space-y-8">
           <div>
             <h1 className="text-3xl font-bold text-slate-950">Youth Group Discussion</h1>
@@ -1194,9 +1532,23 @@ export default function Home() {
             <section className="space-y-4">
               <div className="flex items-center justify-between gap-4">
                 <h2 className="text-xl font-semibold text-slate-950">Discussion Questions</h2>
-                <Button variant="outline" size="sm" onClick={generateDiscussionQuestions}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={youthRegenCount >= REGEN_LIMIT || youthCooldown}
+                  onClick={() => {
+                    if (youthRegenCount >= REGEN_LIMIT || youthCooldown) return
+                    if (youthRegenCount === REGEN_LIMIT - 1) {
+                      if (!confirm('This is your last regeneration for discussion questions. Continue?')) return
+                    }
+                    setYouthRegenCount(c => c + 1)
+                    setYouthCooldown(true)
+                    setTimeout(() => setYouthCooldown(false), COOLDOWN_MS)
+                    generateDiscussionQuestions()
+                  }}
+                >
                   <RefreshCw className="h-4 w-4 mr-2" />
-                  Regenerate
+                  {youthRegenCount >= REGEN_LIMIT ? 'Limit reached' : 'Regenerate'}
                 </Button>
               </div>
               <div className="space-y-3">
@@ -1259,6 +1611,7 @@ export default function Home() {
   if (step === 'songs') {
     return (
       <div className="min-h-screen bg-white p-4 text-slate-950">
+        {logoutButton}
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-slate-950 mb-2">Worship Songs</h1>
@@ -1306,12 +1659,12 @@ export default function Home() {
               <section>
                 <h2 className="text-xl font-semibold text-slate-950 mb-4">New song suggestions</h2>
                 <div className="space-y-4">
-                  {songs.map((song) => (
+                  {songs.map((song, i) => (
                     <Card key={song.id} className="bg-white text-slate-950 border border-slate-200">
                       <CardHeader>
                         <div className="flex items-center justify-between">
                           <CardTitle className="text-lg text-slate-950">{song.title}</CardTitle>
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 items-center">
                             <Badge variant="outline">{song.tempo}</Badge>
                           </div>
                         </div>
@@ -1323,6 +1676,31 @@ export default function Home() {
                   ))}
                 </div>
               </section>
+            )}
+
+            {!isLoading && ( (recommendedFamiliar && recommendedFamiliar.length > 0) || (songs && songs.length > 0) ) && (
+              <div className="flex justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={songsRegenCount >= REGEN_LIMIT || songsCooldown}
+                  onClick={async () => {
+                    if (songsRegenCount >= REGEN_LIMIT || songsCooldown) return
+                    if (songsRegenCount === REGEN_LIMIT - 1) {
+                      if (!confirm('This is your last regeneration for songs. Continue?')) return
+                    }
+                    setRecommendedFamiliar([])
+                    setSongs([])
+                    setSongsRegenCount(c => c + 1)
+                    setSongsCooldown(true)
+                    setTimeout(() => setSongsCooldown(false), COOLDOWN_MS)
+                    await handleSongsGenerate()
+                  }}
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  {songsRegenCount >= REGEN_LIMIT ? 'Limit reached' : 'Regenerate Songs'}
+                </Button>
+              </div>
             )}
 
             {!isLoading && ( (recommendedFamiliar && recommendedFamiliar.length > 0) || (songs && songs.length > 0) ) && (
@@ -1359,6 +1737,570 @@ export default function Home() {
             )}
           </div>
 
+        </div>
+      </div>
+    )
+  }
+
+  if (step === 'forgot-password') {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center p-4">
+        <Card className="max-w-md w-full bg-white text-slate-950">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl font-bold">Forgot Password</CardTitle>
+            <CardDescription>Enter your email and we'll send a reset link.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {forgotSent ? (
+              <div className="text-center space-y-4">
+                <p className="text-slate-700">If that email is registered, a reset link has been sent. Check your inbox.</p>
+                <Button onClick={() => setStep('login')} className="border border-slate-300 shadow-sm text-slate-900">
+                  Back to Login
+                </Button>
+              </div>
+            ) : (
+              <>
+                <Input
+                  type="email"
+                  placeholder="Your email address"
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                />
+                <div className="flex gap-3">
+                  <Button variant="outline" onClick={() => setStep('login')} className="flex-1 border border-slate-300 text-slate-900">
+                    Back
+                  </Button>
+                  <Button
+                    onClick={async () => {
+                      if (!forgotEmail.trim()) return
+                      await fetch('/api/auth/forgot-password', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: forgotEmail.trim() }),
+                      })
+                      setForgotSent(true)
+                    }}
+                    className="flex-1 border border-slate-300 shadow-sm text-slate-900"
+                  >
+                    Send Reset Link
+                  </Button>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (step === 'register') {
+    const hasChurches = availableChurches.length > 0
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center p-4">
+        <Card className="max-w-lg w-full bg-white text-slate-950">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl font-bold">Create Account</CardTitle>
+            <CardDescription>Register with your church to access all features.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {regError && (
+              <Alert className="border-red-200 bg-red-50 text-red-900">
+                <AlertDescription>{regError}</AlertDescription>
+              </Alert>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Your Church</label>
+              {hasChurches ? (
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search for your church…"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md bg-white text-slate-950 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    value={regChurchSearch}
+                    onChange={(e) => {
+                      setRegChurchSearch(e.target.value)
+                      setRegChurchId('')
+                    }}
+                  />
+                  {regChurchId && (
+                    <p className="mt-1 text-xs text-green-700 font-medium">
+                      ✓ {availableChurches.find(c => c.id === regChurchId)?.name}
+                    </p>
+                  )}
+                  {regChurchSearch.trim().length > 0 && !regChurchId && (() => {
+                    const filtered = availableChurches.filter(c =>
+                      c.name.toLowerCase().includes(regChurchSearch.toLowerCase()) ||
+                      c.location.toLowerCase().includes(regChurchSearch.toLowerCase())
+                    )
+                    return filtered.length > 0 ? (
+                      <ul className="absolute z-10 mt-1 w-full max-h-48 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-lg text-sm">
+                        {filtered.map(c => (
+                          <li
+                            key={c.id}
+                            className="px-3 py-2 cursor-pointer hover:bg-slate-100 text-slate-950"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setRegChurchId(c.id)
+                              setRegChurchSearch(c.name)
+                            }}
+                          >
+                            <span className="font-medium">{c.name}</span>
+                            <span className="text-slate-500 text-xs ml-2">{c.location}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="absolute z-10 mt-1 w-full rounded-md border border-slate-200 bg-white shadow-lg px-3 py-2 text-sm text-slate-500">
+                        No churches found
+                      </div>
+                    )
+                  })()}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">No churches registered yet.</p>
+              )}
+              {process.env.NEXT_PUBLIC_CHURCH_REGISTRATION_ENABLED === 'true' ? (
+                <button
+                  type="button"
+                  className="text-sm text-blue-600 hover:underline mt-1"
+                  onClick={() => {
+                    setRegError('')
+                    setRegChurchName('')
+                    setRegChurchLocation('')
+                    setStep('register-church')
+                  }}
+                >
+                  My church isn't listed — register it
+                </button>
+              ) : (
+                <p className="text-sm text-slate-500 mt-1">
+                  Registering new churches will be available soon after some further testing.
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Username</label>
+              <Input
+                placeholder="e.g. johndoe (letters, numbers, _ or -)"
+                value={regUsername}
+                onChange={(e) => setRegUsername(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+              <Input
+                type="email"
+                placeholder="your@email.com"
+                value={regEmail}
+                onChange={(e) => setRegEmail(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+              <Input
+                type="password"
+                placeholder="Min 8 characters"
+                value={regPassword}
+                onChange={(e) => setRegPassword(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Confirm Password</label>
+              <Input
+                type="password"
+                placeholder="Re-enter password"
+                value={regPasswordConfirm}
+                onChange={(e) => setRegPasswordConfirm(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Church Invite Key</label>
+              <Input
+                type="password"
+                placeholder="Enter the key provided by your church"
+                value={regInviteKey}
+                onChange={(e) => setRegInviteKey(e.target.value)}
+              />
+              <p className="text-xs text-slate-500 mt-1">Contact your church administrator if you don't have one.</p>
+            </div>
+
+            <Alert className="border-blue-200 bg-blue-50 text-blue-900">
+              <AlertDescription className="text-sm">
+                <strong>Note:</strong> Song lists are shared per church. All users from the same church share one congregational song database.
+              </AlertDescription>
+            </Alert>
+
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={() => setStep('login')} className="flex-1 border border-slate-300 text-slate-900">
+                Back
+              </Button>
+              <Button
+                onClick={async () => {
+                  setRegError('')
+                  if (!regChurchId) { setRegError('Please select a church'); return }
+                  if (regPassword !== regPasswordConfirm) { setRegError('Passwords do not match'); return }
+                  try {
+                    const res = await fetch('/api/auth/register', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        username: regUsername,
+                        email: regEmail,
+                        password: regPassword,
+                        churchId: regChurchId,
+                        inviteKey: regInviteKey,
+                      }),
+                    })
+                    const json = await res.json()
+                    if (json.ok) {
+                      setRegError('')
+                      alert('Account created! You can now log in.')
+                      setStep('login')
+                    } else {
+                      setRegError(json.error || 'Registration failed')
+                    }
+                  } catch {
+                    setRegError('Network error. Please try again.')
+                  }
+                }}
+                className="flex-1 border border-slate-300 shadow-sm text-slate-900"
+              >
+                Create Account
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (step === 'register-church') {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center p-4">
+        <Card className="max-w-lg w-full bg-white text-slate-950">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl font-bold">Register Your Church</CardTitle>
+            <CardDescription>Submit your church for approval. You'll be notified once approved.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {regError && (
+              <Alert className="border-red-200 bg-red-50 text-red-900">
+                <AlertDescription>{regError}</AlertDescription>
+              </Alert>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Church Name</label>
+              <Input
+                placeholder="e.g. Canterbury Baptist Church"
+                value={regChurchName}
+                onChange={(e) => setRegChurchName(e.target.value)}
+              />
+            </div>
+            <div className="relative">
+              <label className="block text-sm font-medium text-slate-700 mb-1">Suburb</label>
+              <Input
+                placeholder="Start typing your suburb and select from the list"
+                value={suburbQuery}
+                onChange={(e) => handleSuburbInput(e.target.value)}
+                autoComplete="off"
+                className={suburbQuery && !suburbSelected ? 'border-amber-400 focus:border-amber-500' : ''}
+              />
+              {suburbQuery && !suburbSelected && !suburbLoading && suburbSuggestions.length === 0 && (
+                <p className="text-xs text-amber-600 mt-1">Please select a suburb from the dropdown suggestions.</p>
+              )}
+              {suburbLoading && (
+                <p className="text-xs text-slate-400 mt-1">Searching...</p>
+              )}
+              {suburbSuggestions.length > 0 && (
+                <ul className="absolute z-10 w-full bg-white border border-slate-200 rounded-md shadow-lg mt-1 max-h-48 overflow-y-auto">
+                  {suburbSuggestions.map((s, i) => (
+                    <li
+                      key={i}
+                      className="px-3 py-2 text-sm text-slate-800 hover:bg-slate-100 cursor-pointer"
+                      onClick={() => {
+                        setSuburbQuery(s)
+                        setRegChurchLocation(s)
+                        setSuburbSelected(true)
+                        setSuburbSuggestions([])
+                      }}
+                    >
+                      {s}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <hr className="border-slate-200" />
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Service Day</label>
+                <select
+                  value={regServiceDay}
+                  onChange={(e) => setRegServiceDay(e.target.value)}
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                >
+                  {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map(d => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Service Time</label>
+                <select
+                  value={regServiceTime}
+                  onChange={(e) => setRegServiceTime(e.target.value)}
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                >
+                  {Array.from({ length: 33 }, (_, i) => {
+                    const totalMins = 5 * 60 + i * 30
+                    const h = Math.floor(totalMins / 60)
+                    const m = totalMins % 60
+                    const value = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`
+                    const ampm = h < 12 ? 'AM' : 'PM'
+                    const displayH = h % 12 === 0 ? 12 : h % 12
+                    const label = `${displayH}:${String(m).padStart(2,'0')} ${ampm}`
+                    return <option key={value} value={value}>{label}</option>
+                  })}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Contact Email</label>
+              <Input
+                type="email"
+                placeholder="your@email.com"
+                value={regEmail}
+                onChange={(e) => setRegEmail(e.target.value)}
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={() => setStep('register')} className="flex-1 border border-slate-300 text-slate-900">
+                Back
+              </Button>
+              <Button
+                onClick={async () => {
+                  setRegError('')
+                  if (!suburbSelected) { setRegError('Please select your suburb from the dropdown suggestions.'); return }
+                  try {
+                    const res = await fetch('/api/churches/register', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        churchName: regChurchName,
+                        location: regChurchLocation,
+                        contactEmail: regEmail,
+                        serviceDay: regServiceDay,
+                        serviceTime: regServiceTime,
+                      }),
+                    })
+                    const json = await res.json()
+                    if (json.ok) {
+                      setRegError('')
+                      alert('Your church registration has been submitted for approval. You will be notified by email once approved.')
+                      setStep('login')
+                    } else {
+                      setRegError(json.error || 'Registration failed')
+                    }
+                  } catch {
+                    setRegError('Network error. Please try again.')
+                  }
+                }}
+                className="flex-1 border border-slate-300 shadow-sm text-slate-900"
+              >
+                Submit for Approval
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (step === 'admin') {
+    return (
+      <div className="min-h-screen bg-slate-900 text-slate-100 p-6">
+        <div className="max-w-4xl mx-auto space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-white">Church Helper — Admin</h1>
+              <p className="text-slate-400 text-sm mt-1">Pending church registrations</p>
+            </div>
+            <Button
+              variant="outline"
+              className="border-slate-600 text-slate-300 hover:text-white"
+              onClick={() => { setAdminPassword(''); setPendingChurches([]); setStep('login') }}
+            >
+              Logout
+            </Button>
+          </div>
+
+          {adminMessage && (
+            <div className="px-4 py-3 rounded-md bg-slate-700 text-slate-200 text-sm">{adminMessage}</div>
+          )}
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-slate-600 text-slate-300"
+            onClick={() => loadPendingChurches(adminPassword)}
+          >
+            Refresh
+          </Button>
+
+          {/* Invite Key Lookup */}
+          <div className="rounded-lg border border-slate-700 bg-slate-800 p-5 space-y-3">
+            <h2 className="text-lg font-semibold text-white">Retrieve Church Invite Key</h2>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search for a church..."
+                value={keyLookupQuery}
+                className="w-full rounded-md border border-slate-600 bg-slate-700 text-white placeholder:text-slate-400 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                onChange={async (e) => {
+                  const q = e.target.value
+                  setKeyLookupQuery(q)
+                  setKeyLookupSelected(null)
+                  setKeyLookupResult(null)
+                  setKeyLookupError('')
+                  if (q.trim().length < 2) { setKeyLookupResults([]); return }
+                  try {
+                    const res = await fetch('/api/admin/search-churches', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ password: adminPassword, query: q }),
+                    })
+                    const json = await res.json()
+                    setKeyLookupResults(json.ok ? (json.churches || []) : [])
+                  } catch {}
+                }}
+              />
+              {keyLookupResults.length > 0 && !keyLookupSelected && (
+                <ul className="absolute z-10 mt-1 w-full rounded-md border border-slate-600 bg-slate-700 shadow-lg text-sm">
+                  {keyLookupResults.map((c) => (
+                    <li
+                      key={c.id}
+                      className="px-3 py-2 cursor-pointer hover:bg-slate-600 text-white"
+                      onClick={() => {
+                        setKeyLookupSelected(c)
+                        setKeyLookupQuery(c.name)
+                        setKeyLookupResults([])
+                        setKeyLookupResult(null)
+                        setKeyLookupError('')
+                      }}
+                    >
+                      {c.name} <span className="text-slate-400 text-xs">({c.id})</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <Button
+              className="bg-blue-700 hover:bg-blue-600 text-white border-0"
+              disabled={!keyLookupSelected || keyLookupLoading}
+              onClick={async () => {
+                if (!keyLookupSelected) return
+                setKeyLookupLoading(true)
+                setKeyLookupResult(null)
+                setKeyLookupError('')
+                try {
+                  const res = await fetch('/api/admin/get-invite-key', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: adminPassword, churchId: keyLookupSelected.id }),
+                  })
+                  const json = await res.json()
+                  if (json.ok) {
+                    setKeyLookupResult(json.inviteKey)
+                  } else {
+                    setKeyLookupError(json.error || 'Failed to retrieve key')
+                  }
+                } catch {
+                  setKeyLookupError('Request failed')
+                } finally {
+                  setKeyLookupLoading(false)
+                }
+              }}
+            >
+              {keyLookupLoading ? 'Retrieving...' : 'Get Invite Key'}
+            </Button>
+            {keyLookupResult && (
+              <div className="rounded-md bg-slate-900 border border-slate-600 px-4 py-3">
+                <p className="text-xs text-slate-400 mb-1">Invite key for <strong className="text-slate-200">{keyLookupSelected?.name}</strong></p>
+                <p className="font-mono text-green-400 text-sm select-all">{keyLookupResult}</p>
+              </div>
+            )}
+            {keyLookupError && (
+              <p className="text-red-400 text-sm">{keyLookupError}</p>
+            )}
+          </div>
+
+          {pendingChurches.length === 0 ? (
+            <div className="text-slate-400 py-12 text-center">No pending registrations.</div>
+          ) : (
+            <div className="space-y-4">
+              {pendingChurches.map((church) => (
+                <div key={church.id} className="rounded-lg border border-slate-700 bg-slate-800 p-5 space-y-4">
+                  <div className="space-y-1">
+                    <div className="text-lg font-semibold text-white">{church.name}</div>
+                    <div className="text-slate-400 text-sm">{church.location}</div>
+                    <div className="text-slate-500 text-xs">Submitted: {new Date(church.created_at).toLocaleString()}</div>
+                  </div>
+
+                  {church.contactEmail && (
+                    <div className="text-sm text-slate-300">
+                      <span className="font-medium">Contact: </span>{church.contactEmail}
+                    </div>
+                  )}
+                  {(church.serviceDay || church.serviceTime) && (
+                    <div className="text-sm text-slate-300">
+                      <span className="font-medium">Service: </span>{church.serviceDay} at {church.serviceTime}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <label className="block text-xs text-slate-400 mb-1">Church ID / slug</label>
+                      <Input
+                        className="bg-slate-700 border-slate-600 text-white placeholder:text-slate-400"
+                        value={adminSlugs[church.id] ?? church.id}
+                        onChange={(e) => setAdminSlugs(prev => ({ ...prev, [church.id]: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Invite Key <span className="text-slate-500">(sent to contact email on approval)</span></label>
+                    <Input
+                      className="bg-slate-700 border-slate-600 text-white placeholder:text-slate-400 font-mono text-sm"
+                      value={adminInviteKeys[church.id] ?? ''}
+                      onChange={(e) => setAdminInviteKeys(prev => ({ ...prev, [church.id]: e.target.value }))}
+                    />
+                  </div>
+                  <div className="flex gap-3">
+                    <Button
+                      className="flex-1 bg-green-700 hover:bg-green-600 text-white border-0"
+                      onClick={() => handleApproveChurch(church.id)}
+                    >
+                      Approve
+                    </Button>
+                    <Button
+                      className="flex-1 bg-red-800 hover:bg-red-700 text-white border-0"
+                      onClick={() => handleRejectChurch(church.id)}
+                    >
+                      Reject
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     )

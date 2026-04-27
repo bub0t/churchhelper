@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import supabase from '@/lib/supabase.server'
 import bcrypt from 'bcryptjs'
-import { USERS } from '@/lib/data'
+
+const SUPERADMIN_USERNAME = 'supahadmin'
 
 export async function POST(request: Request) {
   try {
@@ -10,44 +11,65 @@ export async function POST(request: Request) {
     const password: string = raw.password || ''
     if (!id || !password) return NextResponse.json({ ok: false }, { status: 400 })
 
-    // If Supabase is configured, check the `churches` table for the stored hash
+    // Superadmin: env-only, never stored in DB
+    if (id === SUPERADMIN_USERNAME) {
+      const superPassword = process.env.SUPERADMIN_PASSWORD
+      if (!superPassword) return NextResponse.json({ ok: false }, { status: 401 })
+      if (password !== superPassword) return NextResponse.json({ ok: false }, { status: 401 })
+      return NextResponse.json({ ok: true, role: 'superadmin' })
+    }
+
+    // Regular users: check `users` table — match by username or email
     if (supabase) {
-      const { data, error } = await supabase.from('churches').select('password').eq('id', id).maybeSingle()
+      const isEmail = id.includes('@')
+      const query = supabase
+        .from('users')
+        .select('id, password_hash, church_id, status')
+
+      const { data, error } = await (isEmail
+        ? query.eq('email', id).maybeSingle()
+        : query.eq('id', id).maybeSingle())
+
       if (error) {
-        console.error('/api/auth/login supabase select error:', error)
+        console.error('/api/auth/login supabase error:', error)
         return NextResponse.json({ ok: false }, { status: 500 })
       }
 
-      const stored = (data as any)?.password
-      if (!stored) return NextResponse.json({ ok: false }, { status: 401 })
-
-      const match = await bcrypt.compare(password, stored)
-      if (!match) return NextResponse.json({ ok: false }, { status: 401 })
-
-      return NextResponse.json({ ok: true })
-    }
-
-    // Demo fallback: if an explicit DEMO_PASSWORD is set via env, allow that credential.
-    // Otherwise, allow a local `USERS` fallback (for developer convenience) when Supabase isn't configured.
-    const demoPassword = process.env.DEMO_PASSWORD || process.env.DEV_DEMO_PASSWORD
-    const demoUser = (process.env.DEMO_USER || 'CBC').toLowerCase()
-    if (demoPassword) {
-      if (password === demoPassword && id === demoUser) {
-        console.warn('Authenticated via DEMO_PASSWORD environment (insecure; remove for production).')
-        return NextResponse.json({ ok: true })
+      // If looked up by username and not found, also try email fallback
+      let resolved = data
+      if (!resolved && !isEmail) {
+        const { data: byEmail } = await supabase
+          .from('users')
+          .select('id, password_hash, church_id, status')
+          .eq('email', id)
+          .maybeSingle()
+        resolved = byEmail
       }
-      return NextResponse.json({ ok: false }, { status: 401 })
-    }
 
-    // Local USERS fallback (only when Supabase not configured). This checks the in-repo demo users.
-    try {
-      const local = (USERS as any)[id] || (USERS as any)[id.toUpperCase()] || (USERS as any)[id.toLowerCase()]
-      if (local && local.password && password === local.password) {
-        console.warn('Authenticated via local USERS fallback (insecure; remove before production).')
-        return NextResponse.json({ ok: true })
+      if (resolved) {
+        if (resolved.status !== 'approved') {
+          return NextResponse.json({ ok: false, reason: 'pending' }, { status: 403 })
+        }
+        const match = await bcrypt.compare(password, resolved.password_hash)
+        if (!match) return NextResponse.json({ ok: false }, { status: 401 })
+
+        const { data: church } = await supabase
+          .from('churches')
+          .select('location, service_day, service_time')
+          .eq('id', resolved.church_id)
+          .maybeSingle()
+
+        return NextResponse.json({
+          ok: true,
+          role: 'user',
+          churchId: resolved.church_id,
+          churchLocation: (church as any)?.location ?? null,
+          serviceDay: (church as any)?.service_day ?? 'Sunday',
+          serviceTime: (church as any)?.service_time ?? '10:00',
+        })
       }
-    } catch (e) {
-      // ignore and continue to fail below
+
+      // No user found — fall through to legacy church fallback below
     }
 
     return NextResponse.json({ ok: false }, { status: 401 })

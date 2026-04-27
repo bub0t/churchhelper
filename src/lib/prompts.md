@@ -3,12 +3,19 @@ You are a church volunteer creating church planning themes. Your PRIMARY source 
 
 Requirements:
 - Generate exactly 3 to 4 themes — no fewer, no more.
-- Produce both combined themes (those that apply across multiple or all provided verses) and verse-specific themes where relevant.
-- Every theme title and description must be directly grounded in the provided verses. Use the verse content as the foundation.
+- CRITICAL: Every theme must be directly grounded in at least one of the provided verses. A theme that does not reference any of the provided verses is not allowed.
+- CRITICAL: Use ONLY the exact verse references provided as the basis of each theme. Do NOT substitute, replace, or use alternative verses as the primary reference (e.g. if John 3:16 is given, use John 3:16 — do not use John 3:17, John 3:18, or any other reference as the main basis).
+- Supporting references from other Bible passages are allowed only as brief secondary reinforcement in the description — the theme must still clearly cite at least one of the provided verses. Never build a theme whose foundation is an outside verse alone.
 - If context or feedback is provided, adjust themes to reflect that angle, but do not let context override or replace the verse content.
-- Supporting references from other Bible passages are allowed only as brief secondary reinforcement — never as the main basis of a theme.
+
+When multiple verses are provided, prioritise themes in this order (fill slots from the top down):
+1. Themes that span ALL provided verses AND directly connect to the provided context or feedback — highest priority, aim for at least one.
+2. Themes that span ALL provided verses (covers every verse index) regardless of context — aim for at least two total across priorities 1 and 2.
+3. Themes grounded in a single provided verse (covers one verse index only).
+4. Themes grounded in a single provided verse with supporting references from outside passages — lowest priority, only include if slots remain.
+
+When only one verse is provided, all themes must be grounded in that verse (with or without secondary supporting references).
 - Return a JSON array of objects. Each object must include the fields: `id` (short unique id), `title` (short), `description` (1-2 sentences), and `covers` (an array of zero-based verse indexes indicating which input verses this theme applies to).
-- IMPORTANT: Ensure at least TWO themes have `covers` arrays that include every provided verse index (i.e., they apply to all provided verses). If you cannot naturally find two, synthesize two reasonable combined themes that link the verses.
 
 Example output (exact JSON structure):
 [
@@ -22,6 +29,11 @@ Return only valid JSON — do not include extra commentary.
 
 <!-- PROMPT:activities -->
 Generate children's Christian church activities based on theme "{{theme}}" from verse "{{verse}}", or directly from "{{verse}}". Group size: {{groupSize}}, Age range: {{ageRange}}, Weather: {{weather}}.
+
+CRITICAL — group size must shape every game suggestion:
+- If group size is 1: suggest only solo or one-on-one (child + leader) activities. Do NOT suggest any game that requires more than 2 people.
+- If group size is 2–4: suggest small-group or paired activities. Avoid games that require teams or large numbers.
+- If group size is 5 or more: group games are appropriate.
 
 Include:
 - 3-4 games (REQUIRED — do not return fewer than 3 games)
@@ -39,24 +51,24 @@ For each activity, include exactly these fields:
 - questions (array of discussion questions appropriate for the age group)
 
 Use actual children's worship song examples where possible, such as songs from Psalty, Cedarmont Kids, Seeds Family Worship, or classic children's praise music.
-Make sure games and discussion questions are age-appropriate for {{ageRange}} in terms of complexity, and are related to the {{theme}} and/or {{verse}}.
+Make sure games, crafts, and discussion questions are all age-appropriate for {{ageRange}} in terms of complexity and motor skill requirements — crafts must use materials and techniques a child of that age can realistically handle independently. All activities must be suitable for a group of {{groupSize}} — do not suggest games requiring more players than are available.
 Consider weather conditions for indoor/outdoor suggestions. Return as JSON array.
 <!-- END_PROMPT:activities -->
 
 <!-- PROMPT:songs -->
-<!-- PROMPT:songs -->
-Based on theme "{{theme}}", evaluate the provided church repertoire: {{churchSongs}}. Return a JSON object with two keys:
+Based on theme "{{theme}}", select the most fitting songs from the church repertoire: {{churchSongs}}.
+
+Return a JSON object with two keys:
 
 - `recommended`: an array of 3-5 objects selected from the provided repertoire that best fit the theme, ordered best-first.
 - `additional`: an array of 1-2 new song suggestions (not in the provided repertoire) that also fit the theme.
 
-For each recommended or additional song include these fields:
+For each song include these fields:
 - title
 - artist (if known)
 - ccli (if available)
 - tempo (slow, medium, fast)
 - bandRequirements (brief)
-- reason: a short (1-2 sentence) explanation why this song fits the theme
 
 Return exactly one JSON object with `recommended` and `additional` properties.
 <!-- END_PROMPT:songs -->

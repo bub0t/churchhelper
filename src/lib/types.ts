@@ -27,5 +27,4 @@ export interface Song {
   bandRequirements: string
   youtubeUrl?: string
   isHymn?: boolean
-  reason?: string
 }

@@ -158,6 +158,6 @@ export const USERS: Record<string, { songs: string[]; location?: string; passwor
   CBC: {
     songs: CBC_SONGS,
     location: 'Canterbury, Victoria, Australia',
-    password: 'John3:16',
+    // password intentionally omitted — stored as bcrypt hash in Supabase churches table
   },
 }
