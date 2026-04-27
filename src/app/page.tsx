@@ -23,8 +23,10 @@ function getNextSundayText() {
 /**
  * Deduplicates and merges verse references.
  * - Exact duplicates (case-insensitive) are collapsed to one.
- * - Overlapping or adjacent same-book same-chapter ranges are merged
- *   (e.g. "John 1:1-7" + "John 1:5-10" → "John 1:1-10").
+ * - Overlapping or adjacent same-book ranges are merged when they are either
+ *   within the same chapter (e.g. "John 1:1-7" + "John 1:5-10" → "John 1:1-10")
+ *   or whole-chapter references/ranges across adjacent chapters
+ *   (e.g. "John 3" + "John 4" → "John 3-4").
  * References that can't be parsed are deduplicated by case-insensitive match.
  */
 function normalizeAndMergeVerses(inputs: string[]): string[] {
@@ -87,16 +89,28 @@ function normalizeAndMergeVerses(inputs: string[]): string[] {
 
   inputs.forEach((v, i) => {
     let anyParsed = false
-    for (const expanded of expandCommas(v)) {
+    const expandedParts = expandCommas(v)
+    const failedExpanded: string[] = []
+
+    for (const expanded of expandedParts) {
       const p = parseRef(expanded)
       if (p) {
         const key = p.bookKey
         if (!byBook.has(key)) byBook.set(key, [])
         byBook.get(key)!.push({ ...p, order: i })
         anyParsed = true
+      } else {
+        failedExpanded.push(expanded.trim())
       }
     }
-    if (!anyParsed) unparseable.push({ value: v.trim(), order: i })
+
+    if (!anyParsed) {
+      unparseable.push({ value: v.trim(), order: i })
+    } else if (failedExpanded.length > 0) {
+      for (const failed of failedExpanded) {
+        unparseable.push({ value: failed, order: i })
+      }
+    }
   })
 
   const merged: { ref: string; order: number }[] = []
