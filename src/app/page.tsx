@@ -178,6 +178,9 @@ export default function Home() {
   const [themeFeedback, setThemeFeedback] = useState('')
   const [weather, setWeather] = useState('')
   const weatherFetchedRef = useRef(false)
+  const shownSongTitlesRef = useRef<Set<string>>(new Set())
+  const shownActivityTitlesRef = useRef<Set<string>>(new Set())
+  const shownQuestionsRef = useRef<Set<string>>(new Set())
   const [loginUsername, setLoginUsername] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
   const [loginChurchId, setLoginChurchId] = useState('')
@@ -430,11 +433,17 @@ export default function Home() {
       const response = await fetch('/api/discussion', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ theme: selectedTheme.title, verses }),
+        body: JSON.stringify({
+          theme: selectedTheme.title,
+          verses,
+          excludedQuestions: Array.from(shownQuestionsRef.current),
+        }),
       })
       if (response.ok) {
         const data = await response.json()
-        setDiscussionQuestions(data.questions || [])
+        const qs: string[] = data.questions || []
+        setDiscussionQuestions(qs)
+        for (const q of qs) shownQuestionsRef.current.add(q)
       }
     } catch (e) {
       console.error('Discussion questions failed', e)
@@ -637,6 +646,9 @@ export default function Home() {
         }
       })
       setActivities(finalActivities)
+      for (const a of finalActivities) {
+        if (a.title) shownActivityTitlesRef.current.add(a.title)
+      }
     } catch (error) {
       console.error('Error generating activities:', error)
     } finally {
@@ -652,7 +664,11 @@ export default function Home() {
       const response = await fetch('/api/songs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ theme: selectedTheme.title, userId: (loginChurchId || loginUsername || 'CBC') }),
+        body: JSON.stringify({
+          theme: selectedTheme.title,
+          userId: (loginChurchId || loginUsername || 'CBC'),
+          excludedTitles: Array.from(shownSongTitlesRef.current),
+        }),
       })
       const data = await response.json()
       const rec = data.recommended || []
@@ -690,6 +706,11 @@ export default function Home() {
 
       const normalizedAdditional = rawAdditional.map((s: any, i: number) => normalize(s, i))
       setSongs(normalizedAdditional)
+
+      // Accumulate shown titles so future regenerations can exclude them
+      for (const s of [...normalizedRecommended, ...normalizedAdditional]) {
+        if (s.title) shownSongTitlesRef.current.add(s.title)
+      }
     } catch (error) {
       console.error('Error generating songs:', error)
     } finally {
@@ -1310,7 +1331,7 @@ export default function Home() {
                           const response = await fetch('/api/activities', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ theme: selectedTheme?.title, verses, groupSize: parseInt(groupSize || '0', 10), ageRange, weather }),
+                            body: JSON.stringify({ theme: selectedTheme?.title, verses, groupSize: parseInt(groupSize || '0', 10), ageRange, weather, excludedTitles: Array.from(shownActivityTitlesRef.current) }),
                           })
                           if (response.ok) {
                             const json = await response.json()
@@ -1320,6 +1341,7 @@ export default function Home() {
                               const take = newGames.slice(0, 4).map((a: Activity, i: number) => ({ ...a, id: a.id || `game-refreshed-${i+1}`, expanded: false }))
                               return [...take, ...kept]
                             })
+                            for (const a of newGames) { if (a.title) shownActivityTitlesRef.current.add(a.title) }
                           }
                         } catch (e) {
                           console.error('Refresh games failed', e)
@@ -1439,7 +1461,7 @@ export default function Home() {
                         const response = await fetch('/api/activities', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ theme: selectedTheme?.title, verses, groupSize: parseInt(groupSize || '0', 10), ageRange, weather }),
+                          body: JSON.stringify({ theme: selectedTheme?.title, verses, groupSize: parseInt(groupSize || '0', 10), ageRange, weather, excludedTitles: Array.from(shownActivityTitlesRef.current) }),
                         })
                         if (response.ok) {
                           const json = await response.json()
@@ -1449,6 +1471,7 @@ export default function Home() {
                             const take = newCrafts.slice(0, 4).map((a: Activity, i: number) => ({ ...a, id: a.id || `craft-refreshed-${i+1}`, expanded: false }))
                             return [...kept, ...take]
                           })
+                          for (const a of newCrafts) { if (a.title) shownActivityTitlesRef.current.add(a.title) }
                         }
                       } catch (e) {
                         console.error('Refresh crafts failed', e)
@@ -1538,7 +1561,7 @@ export default function Home() {
                           const response = await fetch('/api/activities', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ theme: selectedTheme?.title, verses, groupSize: parseInt(groupSize || '0', 10), ageRange, weather }),
+                            body: JSON.stringify({ theme: selectedTheme?.title, verses, groupSize: parseInt(groupSize || '0', 10), ageRange, weather, excludedTitles: Array.from(shownActivityTitlesRef.current) }),
                           })
                           if (response.ok) {
                             const json = await response.json()
@@ -1548,6 +1571,7 @@ export default function Home() {
                               const take = newSongs.slice(0, 2).map((a: Activity, i: number) => ({ ...a, id: a.id || `song-refreshed-${i+1}`, expanded: false }))
                               return [...kept, ...take]
                             })
+                            for (const a of newSongs) { if (a.title) shownActivityTitlesRef.current.add(a.title) }
                           }
                         } catch (e) {
                           console.error('Refresh song failed', e)
@@ -1809,6 +1833,7 @@ export default function Home() {
                     setRecommendedFamiliar([])
                     setSongs([])
                     setSongsRegenCount(c => c + 1)
+                    // Keep shownSongTitlesRef intact so the API excludes all previously shown songs
                     setSongsCooldown(true)
                     setTimeout(() => setSongsCooldown(false), COOLDOWN_MS)
                     await handleSongsGenerate()

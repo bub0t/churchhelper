@@ -26,6 +26,9 @@ export async function POST(request: Request) {
     const theme = body?.theme || ''
     const rawUserId = typeof body?.userId === 'string' ? body.userId : 'CBC'
     const churchId = rawUserId.toLowerCase()
+    const excludedTitles: string[] = Array.isArray(body?.excludedTitles)
+      ? body.excludedTitles.map((t: unknown) => (typeof t === 'string' ? t.toLowerCase() : '')).filter(Boolean)
+      : []
 
     // Prefer Supabase as source of truth for church songs so newly added songs are included
     // null = Supabase unavailable (fall back to local data); [] = church exists but has no songs yet
@@ -44,7 +47,11 @@ export async function POST(request: Request) {
     // Use embeddings-based prefilter — returns titles from church_songs in Supabase
     const top = await getTopKSongsByTheme(theme || '', Math.min(20, churchSongs.length), churchId)
     // top already comes from Supabase church_songs, so no need to re-filter against hardcoded list
-    const candidates = top.length > 0 ? top : churchSongs.slice(0, 20)
+    const allCandidates = top.length > 0 ? top : churchSongs.slice(0, 20)
+    // Exclude previously shown songs so regeneration produces fresh results
+    const candidates = excludedTitles.length > 0
+      ? allCandidates.filter(t => !excludedTitles.includes(t.toLowerCase()))
+      : allCandidates
 
     const result = await aiGenerateSongs(theme || '', candidates)
 

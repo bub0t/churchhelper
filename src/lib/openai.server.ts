@@ -152,15 +152,19 @@ export async function aiGenerateActivities(
   verse: string,
   groupSize: number,
   ageRange: string,
-  weather: string
+  weather: string,
+  excludedTitles: string[] = []
 ): Promise<Activity[]> {
   const template = await getPromptTemplate('activities')
-  const prompt = template
+  let prompt = template
     .replace(/{{theme}}/g, theme)
     .replace(/{{verse}}/g, verse)
     .replace(/{{groupSize}}/g, String(groupSize))
     .replace(/{{ageRange}}/g, ageRange)
     .replace(/{{weather}}/g, weather)
+  if (excludedTitles.length > 0) {
+    prompt += `\n\nIMPORTANT: Do NOT suggest any of these activities that were already shown: ${excludedTitles.join(', ')}. All suggestions must be completely different activities.`
+  }
   try {
     const raw = await createOpenAIResponse(prompt)
     const activities = safeParseJson<Activity[]>(raw)
@@ -278,7 +282,7 @@ export async function aiGenerateSongs(theme: string, churchSongs: string[]): Pro
   return { recommended: recommendedFallback, additional: additionalFallback }
 }
 
-export async function aiGenerateDiscussion(theme: string, verses: string[]): Promise<string[]> {
+export async function aiGenerateDiscussion(theme: string, verses: string[], excludedQuestions: string[] = []): Promise<string[]> {
   const verseList = verses.length > 0 ? verses.join(', ') : 'the theme'
   const prompt = `Generate exactly 5 discussion questions about the theme "${theme}" based on ${verseList}.
 The questions are for a youth group of secondary school students aged 12 to 18 years old.
@@ -289,7 +293,7 @@ Requirements:
 - The remaining questions should mix: personal/reflective, theological, and practical/application-focused types.
 - All questions must feel relevant to teenagers living in the real world, not generic or abstract.
 
-Return ONLY a valid JSON array of 5 strings, e.g. ["Question 1?", "Question 2?", ...]`
+Return ONLY a valid JSON array of 5 strings, e.g. ["Question 1?", "Question 2?", ...]${excludedQuestions.length > 0 ? `\n\nIMPORTANT: Do NOT repeat or closely paraphrase any of these previously shown questions:\n${excludedQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}\nAll 5 questions must be fresh and distinct from the above.` : ''}`
 
   try {
     const response = await openai.responses.create({
