@@ -106,8 +106,13 @@ export async function GET(request: Request) {
         if (rain3h > 0) precipParts.push(`${rain3h.toFixed(1)}mm expected (3h window)`)
         if (pop > 0) precipParts.push(`${Math.round(pop * 100)}% chance of rain`)
 
+        const wetGroundLikely = rain3h > 0 || pop >= 0.5
         if (precipParts.length > 0) {
-          weatherStr += `. Precipitation: ${precipParts.join(', ')}. Ground likely wet — indoor activities recommended.`
+          if (wetGroundLikely) {
+            weatherStr += `. Precipitation: ${precipParts.join(', ')}. Ground likely wet — indoor activities recommended.`
+          } else {
+            weatherStr += `. ${precipParts.join(', ')} — outdoor activities likely fine, but light rain possible.`
+          }
         } else {
           weatherStr += '. No rain expected — outdoor activities suitable.'
         }
