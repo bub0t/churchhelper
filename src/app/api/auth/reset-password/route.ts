@@ -27,13 +27,18 @@ export async function POST(request: Request) {
     // Fast pre-check: verify the token looks valid before the expensive hash.
     // The RPC below is still the authoritative atomic operation; this only avoids
     // wasting bcrypt rounds on obviously-invalid tokens.
-    const { data: tokenRow } = await supabase
+    const { data: tokenRow, error: preCheckErr } = await supabase
       .from('password_reset_tokens')
       .select('token')
       .eq('token', token)
       .eq('used', false)
       .gt('expires_at', new Date().toISOString())
       .maybeSingle()
+
+    if (preCheckErr) {
+      console.error('[reset-password] pre-check error:', preCheckErr)
+      return NextResponse.json({ ok: false, error: 'Could not validate token' }, { status: 500 })
+    }
 
     if (!tokenRow) {
       return NextResponse.json({ ok: false, error: 'Invalid, expired, or already-used token' }, { status: 400 })
