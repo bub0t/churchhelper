@@ -53,6 +53,10 @@ export default function Home() {
   const [isRefreshingGames, setIsRefreshingGames] = useState(false)
   const [isRefreshingCrafts, setIsRefreshingCrafts] = useState(false)
   const [isRefreshingSong, setIsRefreshingSong] = useState(false)
+  const [activitiesCooldown, setActivitiesCooldown] = useState(false)
+  const refreshGamesAbortRef = useRef<AbortController | null>(null)
+  const refreshCraftsAbortRef = useRef<AbortController | null>(null)
+  const refreshSongAbortRef = useRef<AbortController | null>(null)
   const [discussionQuestions, setDiscussionQuestions] = useState<string[]>([])
   const [regenerateCount, setRegenerateCount] = useState(0)
   const [songsRegenCount, setSongsRegenCount] = useState(0)
@@ -61,6 +65,7 @@ export default function Home() {
   const [youthCooldown, setYouthCooldown] = useState(false)
   const REGEN_LIMIT = 3
   const COOLDOWN_MS = 5000
+  const THEME_REGEN_LIMIT = 5
   const [themeFeedback, setThemeFeedback] = useState('')
   const [weather, setWeather] = useState('')
   const weatherFetchedRef = useRef(false)
@@ -191,6 +196,7 @@ export default function Home() {
     setActivities([])
     setDiscussionQuestions([])
     setSelectedTheme(null)
+    setRegenerateCount(0)
     setSongsRegenCount(0)
     setSongsCooldown(false)
     setYouthRegenCount(0)
@@ -198,13 +204,15 @@ export default function Home() {
     setStep('login')
   }
 
-  const logoutButton = userType !== null ? (
-    <button
-      onClick={handleLogout}
-      className="fixed top-3 right-4 z-50 text-xs text-slate-400 hover:text-slate-700 underline underline-offset-2"
-    >
-      Log out
-    </button>
+  const logoutButton = userType === 'advanced' ? (
+    <div className="text-center pt-8 pb-2">
+      <button
+        onClick={handleLogout}
+        className="text-xs text-slate-400 hover:text-slate-700 underline underline-offset-2"
+      >
+        Log out
+      </button>
+    </div>
   ) : null
 
   const handleStartNewVerses = () => {
@@ -218,6 +226,7 @@ export default function Home() {
     setActivities([])
     setDiscussionQuestions([])
     setSelectedTheme(null)
+    setRegenerateCount(0)
     setSongsRegenCount(0)
     setSongsCooldown(false)
     setYouthRegenCount(0)
@@ -259,6 +268,11 @@ export default function Home() {
   }
 
   const handleRegenerateThemes = async () => {
+    if (regenerateCount >= THEME_REGEN_LIMIT) return
+    if (regenerateCount === THEME_REGEN_LIMIT - 1) {
+      const confirmed = window.confirm(`This is your last theme regeneration (${THEME_REGEN_LIMIT} of ${THEME_REGEN_LIMIT}). Continue?`)
+      if (!confirmed) return
+    }
     setIsLoading(true)
     try {
       const validVerses = verses.filter((_, i) => !versesText[i]?.notFound)
@@ -446,6 +460,14 @@ export default function Home() {
   const handleActivitiesSubmit = async () => {
     if (!groupSize || !ageRange || !selectedTheme) return
 
+    // Cancel any in-progress refresh requests
+    refreshGamesAbortRef.current?.abort()
+    refreshCraftsAbortRef.current?.abort()
+    refreshSongAbortRef.current?.abort()
+    setIsRefreshingGames(false)
+    setIsRefreshingCrafts(false)
+    setIsRefreshingSong(false)
+
     setIsLoading(true)
     try {
       const response = await fetch('/api/activities', {
@@ -524,6 +546,8 @@ export default function Home() {
       console.error('Error generating activities:', error)
     } finally {
       setIsLoading(false)
+      setActivitiesCooldown(true)
+      setTimeout(() => setActivitiesCooldown(false), 5000)
     }
   }
 
@@ -739,7 +763,6 @@ export default function Home() {
   if (step === 'verse') {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
-        {logoutButton}
         <div className="max-w-2xl w-full space-y-6">
           <Card className="w-full bg-white text-slate-950">
             <CardHeader>
@@ -792,6 +815,7 @@ export default function Home() {
               </div>
             </CardContent>
           </Card>
+          {logoutButton}
         </div>
       </div>
     )
@@ -800,7 +824,6 @@ export default function Home() {
   if (step === 'verseReview') {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
-        {logoutButton}
         <div className="max-w-2xl w-full">
           <Card>
             <CardHeader>
@@ -843,6 +866,7 @@ export default function Home() {
               </div>
             </CardContent>
           </Card>
+          {logoutButton}
         </div>
       </div>
     )
@@ -851,7 +875,6 @@ export default function Home() {
   if (step === 'themeContext') {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
-        {logoutButton}
         <div className="max-w-2xl w-full">
           <Card>
             <CardHeader>
@@ -879,6 +902,7 @@ export default function Home() {
               </div>
             </CardContent>
           </Card>
+          {logoutButton}
         </div>
       </div>
     )
@@ -887,7 +911,6 @@ export default function Home() {
   if (step === 'themes') {
     return (
       <div className="min-h-screen bg-white p-4">
-        {logoutButton}
         <div className="max-w-4xl mx-auto">
           <div className="mb-8">
             <div className="mb-4">
@@ -918,19 +941,24 @@ export default function Home() {
             ))}
           </div>
 
-          <div className="text-center">
+          <div className="text-center space-y-2">
+            {regenerateCount === THEME_REGEN_LIMIT - 1 && (
+              <p className="text-xs text-amber-600">Last regeneration remaining.</p>
+            )}
             <Button
               variant="outline"
               onClick={handleRegenerateThemes}
-              disabled={isLoading}
+              disabled={isLoading || regenerateCount >= THEME_REGEN_LIMIT}
               className="gap-2 border border-slate-300 shadow-sm text-slate-900"
             >
               <RefreshCw className="h-4 w-4" />
               {isLoading
                 ? 'Regenerating...'
-                : themeFeedback
-                  ? 'Regenerate with feedback'
-                  : 'Try Different Themes'}
+                : regenerateCount >= THEME_REGEN_LIMIT
+                  ? 'No regenerations left'
+                  : themeFeedback
+                    ? 'Regenerate with feedback'
+                    : 'Try Different Themes'}
             </Button>
           </div>
 
@@ -949,7 +977,7 @@ export default function Home() {
               <div className="mt-3 text-right">
                 <Button
                   onClick={handleRegenerateThemes}
-                  disabled={isLoading || !themeFeedback.trim()}
+                  disabled={isLoading || !themeFeedback.trim() || regenerateCount >= THEME_REGEN_LIMIT}
                   className="border border-slate-300 bg-white text-slate-950 shadow-sm"
                 >
                   {isLoading ? 'Applying feedback...' : 'Apply feedback & Regenerate'}
@@ -957,6 +985,7 @@ export default function Home() {
               </div>
             </div>
           )}
+          {logoutButton}
         </div>
       </div>
     )
@@ -965,7 +994,6 @@ export default function Home() {
   if (step === 'choice') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-        {logoutButton}
         <Card className="max-w-2xl w-full">
           <CardHeader className="text-center">
             <CardTitle className="text-2xl font-bold text-slate-950">What would you like to plan?</CardTitle>
@@ -1026,6 +1054,7 @@ export default function Home() {
             </div>
           </CardContent>
         </Card>
+        {logoutButton}
       </div>
     )
   }
@@ -1118,34 +1147,24 @@ export default function Home() {
 
     return (
       <div className="min-h-screen bg-white p-4">
-        {logoutButton}
         <div className="max-w-5xl mx-auto space-y-8">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-slate-950">Children's Activities</h1>
-              <p className="text-slate-600">Theme: {selectedTheme?.title}</p>
-              <p className="text-sm text-slate-700 mt-2">
-                {weather
-                  ? weather
-                  : 'Fetching weather forecast for next Sunday…'}
-              </p>
-            </div>
-            <Button onClick={() => setActivities([])} className="border border-slate-300 bg-white text-slate-950 shadow-sm">
-              Back to children's settings
-            </Button>
+          <div>
+            <h1 className="text-3xl font-bold text-slate-950">Children's Activities</h1>
+            <p className="text-slate-600">Theme: {selectedTheme?.title}</p>
+            <p className="text-sm text-slate-700 mt-1">
+              {weather ? weather : 'Fetching weather forecast for next Sunday…'}
+            </p>
           </div>
 
-          {activities.length === 0 ? (
-            <Card className="max-w-2xl mx-auto">
-              <CardHeader>
-                <CardTitle>Tell us about the children</CardTitle>
-                <CardDescription>We'll generate games, crafts and a song based on their age and group size.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
+          <Card className="max-w-2xl">
+            <CardHeader>
+              <CardTitle>Children's details</CardTitle>
+              <CardDescription>We'll generate games, crafts and a song based on their age and group size.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
-                    Group Size
-                  </label>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Number of children</label>
                   <Input
                     type="number"
                     placeholder="e.g., 15"
@@ -1154,25 +1173,30 @@ export default function Home() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
-                    Age Range
-                  </label>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Age range</label>
                   <Input
                     placeholder="e.g., 5-8 years old"
                     value={ageRange}
                     onChange={(e) => setAgeRange(e.target.value)}
                   />
                 </div>
+              </div>
+              <div className="flex gap-3">
+                <Button onClick={() => setStep('choice')} className="flex-1 border border-slate-300 bg-white text-slate-950 shadow-sm">
+                  ← Back
+                </Button>
                 <Button
                   onClick={handleActivitiesSubmit}
-                  disabled={!groupSize || !ageRange || isLoading}
-                  className="w-full border border-slate-300 shadow-sm text-slate-900"
+                  disabled={!groupSize || !ageRange || isLoading || activitiesCooldown}
+                  className="flex-1 border border-slate-300 shadow-sm text-slate-900"
                 >
-                  {isLoading ? 'Generating Activities...' : 'Generate Activities'}
+                  {isLoading ? 'Generating…' : activitiesCooldown ? 'Please wait…' : 'Generate Activities'}
                 </Button>
-              </CardContent>
-            </Card>
-          ) : (
+              </div>
+            </CardContent>
+          </Card>
+
+          {activities.length > 0 && (
             <div className="space-y-12">
               {/* ... activities rendering unchanged ... */}
               {/* keep remaining code as before */}
@@ -1186,14 +1210,17 @@ export default function Home() {
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={isRefreshingGames}
+                      disabled={isRefreshingGames || isLoading}
                       onClick={async () => {
+                        const abortController = new AbortController()
+                        refreshGamesAbortRef.current = abortController
                         setIsRefreshingGames(true)
                         try {
                           const response = await fetch('/api/activities', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ theme: selectedTheme?.title, verses, groupSize: parseInt(groupSize || '0', 10), ageRange, weather }),
+                            signal: abortController.signal,
                           })
                           if (response.ok) {
                             const json = await response.json()
@@ -1204,8 +1231,8 @@ export default function Home() {
                               return [...take, ...kept]
                             })
                           }
-                        } catch (e) {
-                          console.error('Refresh games failed', e)
+                        } catch (e: unknown) {
+                          if (e instanceof Error && e.name !== 'AbortError') console.error('Refresh games failed', e)
                         } finally {
                           setIsRefreshingGames(false)
                         }
@@ -1315,14 +1342,17 @@ export default function Home() {
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={isRefreshingCrafts}
+                    disabled={isRefreshingCrafts || isLoading}
                     onClick={async () => {
+                      const abortController = new AbortController()
+                      refreshCraftsAbortRef.current = abortController
                       setIsRefreshingCrafts(true)
                       try {
                         const response = await fetch('/api/activities', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ theme: selectedTheme?.title, verses, groupSize: parseInt(groupSize || '0', 10), ageRange, weather }),
+                          signal: abortController.signal,
                         })
                         if (response.ok) {
                           const json = await response.json()
@@ -1333,8 +1363,8 @@ export default function Home() {
                             return [...kept, ...take]
                           })
                         }
-                      } catch (e) {
-                        console.error('Refresh crafts failed', e)
+                      } catch (e: unknown) {
+                        if (e instanceof Error && e.name !== 'AbortError') console.error('Refresh crafts failed', e)
                       } finally {
                         setIsRefreshingCrafts(false)
                       }
@@ -1414,14 +1444,17 @@ export default function Home() {
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={isRefreshingSong}
+                      disabled={isRefreshingSong || isLoading}
                       onClick={async () => {
+                        const abortController = new AbortController()
+                        refreshSongAbortRef.current = abortController
                         setIsRefreshingSong(true)
                         try {
                           const response = await fetch('/api/activities', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ theme: selectedTheme?.title, verses, groupSize: parseInt(groupSize || '0', 10), ageRange, weather }),
+                            signal: abortController.signal,
                           })
                           if (response.ok) {
                             const json = await response.json()
@@ -1432,8 +1465,8 @@ export default function Home() {
                               return [...kept, ...take]
                             })
                           }
-                        } catch (e) {
-                          console.error('Refresh song failed', e)
+                        } catch (e: unknown) {
+                          if (e instanceof Error && e.name !== 'AbortError') console.error('Refresh song failed', e)
                         } finally {
                           setIsRefreshingSong(false)
                         }
@@ -1505,6 +1538,7 @@ export default function Home() {
               </div>
             </div>
           )}
+          {logoutButton}
         </div>
       </div>
     )
@@ -1513,7 +1547,6 @@ export default function Home() {
   if (step === 'youthDiscussion') {
     return (
       <div className="min-h-screen bg-white p-4">
-        {logoutButton}
         <div className="max-w-3xl mx-auto space-y-8">
           <div>
             <h1 className="text-3xl font-bold text-slate-950">Youth Group Discussion</h1>
@@ -1603,6 +1636,7 @@ export default function Home() {
               </div>
             </div>
           )}
+          {logoutButton}
         </div>
       </div>
     )
@@ -1611,7 +1645,6 @@ export default function Home() {
   if (step === 'songs') {
     return (
       <div className="min-h-screen bg-white p-4 text-slate-950">
-        {logoutButton}
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-slate-950 mb-2">Worship Songs</h1>
@@ -1738,6 +1771,7 @@ export default function Home() {
           </div>
 
         </div>
+        {logoutButton}
       </div>
     )
   }
