@@ -749,6 +749,10 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, selectedTheme])
 
+  useEffect(() => {
+    setThemeDescExpanded(false)
+  }, [selectedTheme?.id])
+
   const toggleActivityExpansion = (activityId: string) => {
     setActivities(prev => prev.map(activity =>
       activity.id === activityId

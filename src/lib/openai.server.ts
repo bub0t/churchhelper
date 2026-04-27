@@ -315,7 +315,8 @@ Return ONLY a valid JSON array of strings, e.g. ["Question 1?", "Question 2?", .
     if (match) {
       const parsed = JSON.parse(match[0])
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((q: unknown) => String(q))
+        const questions = parsed.map((q: unknown) => String(q))
+        return questions.length > 8 ? questions.slice(0, 8) : questions
       }
     }
   } catch (e) {
@@ -323,11 +324,12 @@ Return ONLY a valid JSON array of strings, e.g. ["Question 1?", "Question 2?", .
   }
 
   // Fallback questions
+  const verseRef = verses.length > 0 ? verses.join(', ') : `the theme of "${theme}"`
   return [
     `How does the theme "${theme}" connect to challenges you face in your own life?`,
-    `When you scroll through social media and see others' highlight reels, how does the message of ${verseList} change the way you see yourself?`,
+    `When you scroll through social media and see others' highlight reels, how does the message of ${verseRef} change the way you see yourself?`,
     `Have you ever felt pressure from friends to act against your values? How could this theme give you strength in that moment?`,
-    `What does it mean to live out the message of ${verseList} as a young person today?`,
+    `What does it mean to live out the message of ${verseRef} as a young person today?`,
     `What is one practical thing you could do this week that reflects this theme?`,
   ]
 }
