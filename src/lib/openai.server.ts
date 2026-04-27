@@ -283,17 +283,27 @@ export async function aiGenerateSongs(theme: string, churchSongs: string[]): Pro
 }
 
 export async function aiGenerateDiscussion(theme: string, verses: string[], excludedQuestions: string[] = []): Promise<string[]> {
-  const verseList = verses.length > 0 ? verses.join(', ') : 'the theme'
-  const prompt = `Generate exactly 5 discussion questions about the theme "${theme}" based on ${verseList}.
-The questions are for a youth group of secondary school students aged 12 to 18 years old.
-Make the questions thought-provoking, age-appropriate, and grounded in the theme and verses.
+  const verseLine = verses.length > 0 ? `\nVerses: ${verses.join(', ')}` : ''
+  const prompt = `Generate a set of discussion questions for a youth group of secondary school students aged 12 to 18.
 
-Requirements:
-- At least 2 of the 5 questions MUST directly connect the theme to real challenges adolescents face today, such as peer pressure, social media, identity, belonging, mental health, fear of missing out, online bullying, or comparison culture. Name the specific challenge in the question.
-- The remaining questions should mix: personal/reflective, theological, and practical/application-focused types.
-- All questions must feel relevant to teenagers living in the real world, not generic or abstract.
+Theme: "${theme}"${verseLine}
 
-Return ONLY a valid JSON array of 5 strings, e.g. ["Question 1?", "Question 2?", ...]${excludedQuestions.length > 0 ? `\n\nIMPORTANT: Do NOT repeat or closely paraphrase any of these previously shown questions:\n${excludedQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}\nAll 5 questions must be fresh and distinct from the above.` : ''}`
+Every question must directly serve and support this theme — do not drift into general topics. Each question should help students engage more deeply with what the theme means, what the verse says, and how it applies to their lives.
+
+Build the question set from these categories. The total must be between 5 and 8 questions. Use the theme to decide how many questions each category warrants — a richer theme with multiple real-life angles should produce more questions:
+
+- Observation (0–1 questions): Ask what students notice, find surprising, or don't understand about the verse itself. Skip this category if the verse is straightforward and an observation question would feel forced.
+- Theological (1 question): What does this theme reveal about God, human nature, or how life works?
+- Real-life challenge (1–3 questions): Connect the theme to specific challenges teenagers face today — peer pressure, identity, social media, belonging, mental health, academic pressure, comparison culture, fear of failure, loneliness, etc. If the theme genuinely touches multiple challenges, write a separate question for each one. Name the challenge explicitly in the question. Do not combine multiple challenges into one question.
+- Personal/reflective (1–2 questions): Ask students where they see this theme in their own life. If 2 questions, make them distinct — e.g. one about their inner experience, one about their relationships.
+- Practical (1 question): What is one concrete thing they could do this week that reflects this theme?
+
+Rules:
+- All questions must clearly trace back to the theme. Do not ask questions that could apply to any topic.
+- Questions within the same category must be meaningfully different from each other.
+- The total number of questions must be between 5 and 8.
+
+Return ONLY a valid JSON array of strings, e.g. ["Question 1?", "Question 2?", ...]${excludedQuestions.length > 0 ? `\n\nIMPORTANT: Do NOT repeat or closely paraphrase any of these previously shown questions:\n${excludedQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}\nAll questions must be fresh and distinct from the above.` : ''}`
 
   try {
     const response = await openai.responses.create({
@@ -305,7 +315,8 @@ Return ONLY a valid JSON array of 5 strings, e.g. ["Question 1?", "Question 2?",
     if (match) {
       const parsed = JSON.parse(match[0])
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((q: unknown) => String(q))
+        const questions = parsed.map((q: unknown) => String(q))
+        return questions.length > 8 ? questions.slice(0, 8) : questions
       }
     }
   } catch (e) {
@@ -313,11 +324,12 @@ Return ONLY a valid JSON array of 5 strings, e.g. ["Question 1?", "Question 2?",
   }
 
   // Fallback questions
+  const verseRef = verses.length > 0 ? verses.join(', ') : `the theme of "${theme}"`
   return [
     `How does the theme "${theme}" connect to challenges you face in your own life?`,
-    `When you scroll through social media and see others' highlight reels, how does the message of ${verseList} change the way you see yourself?`,
+    `When you scroll through social media and see others' highlight reels, how does the message of ${verseRef} change the way you see yourself?`,
     `Have you ever felt pressure from friends to act against your values? How could this theme give you strength in that moment?`,
-    `What does it mean to live out the message of ${verseList} as a young person today?`,
+    `What does it mean to live out the message of ${verseRef} as a young person today?`,
     `What is one practical thing you could do this week that reflects this theme?`,
   ]
 }
