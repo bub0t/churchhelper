@@ -1270,17 +1270,22 @@ export default function Home() {
               {selectedTheme?.description && (
                 <div className="mt-1">
                   <button
+                    type="button"
+                    aria-expanded={themeDescExpanded}
+                    aria-controls="theme-description"
                     onClick={() => setThemeDescExpanded(v => !v)}
                     className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
                   >
                     About this theme
                     {themeDescExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                   </button>
-                  {themeDescExpanded && (
-                    <p className="mt-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 max-w-prose">
-                      {selectedTheme.description}
-                    </p>
-                  )}
+                  <p
+                    id="theme-description"
+                    hidden={!themeDescExpanded}
+                    className="mt-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 max-w-prose"
+                  >
+                    {selectedTheme.description}
+                  </p>
                 </div>
               )}
               <p className="text-sm text-slate-700 mt-2">
