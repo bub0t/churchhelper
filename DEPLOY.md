@@ -9,6 +9,12 @@ This document lists the recommended steps and environment configuration to deplo
 - `SUPABASE_URL` — your Supabase URL (can be public, but prefer using `NEXT_PUBLIC_SUPABASE_URL` for client use)
 - `SUPABASE_ANON_KEY` or `NEXT_PUBLIC_SUPABASE_ANON_KEY` — client-safe anon key (if client uses Supabase)
 - `SUPABASE_SERVICE_KEY` — server-only secret (required to persist/search embeddings in Supabase)
+- `SUPERADMIN_PASSWORD` — password for the `supahadmin` account (server-only; without this, superadmin login will always return 401)
+- `INVITE_KEY_SECRET` — 64-character hex string (32 bytes) used to AES-256-GCM encrypt/decrypt church invite keys
+- `ADMIN_SECRET` — secret for the `/api/admin/seed-*` endpoints
+- `RESEND_API_KEY` — Resend API key for transactional email (forgot-password, registration notifications)
+- `SUPERADMIN_NOTIFICATION_EMAIL` — email address that receives admin notification emails
+- `NEXT_PUBLIC_CHURCH_REGISTRATION_ENABLED` — set to `true` to enable the church self-registration flow
 - `DEMO_USER` (optional) — demo login id (default `CBC`) for the demo fallback
 - `DEMO_PASSWORD` (optional) — demo login password (enables demo fallback when set)
 - Any other envs used locally (e.g., `SONG_EMBED_PATH`, `DEV_DEMO_PASSWORD`) — keep service keys server-only

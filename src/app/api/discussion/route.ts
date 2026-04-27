@@ -12,6 +12,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ questions: [] }, { status: 400 })
   }
 
-  const questions = await aiGenerateDiscussion(theme, verses)
+  const excludedQuestions: string[] = Array.isArray(body?.excludedQuestions)
+    ? body.excludedQuestions.map((q: unknown) => (typeof q === 'string' ? q : '')).filter(Boolean)
+    : []
+
+  const questions = await aiGenerateDiscussion(theme, verses, excludedQuestions)
   return NextResponse.json({ questions })
 }

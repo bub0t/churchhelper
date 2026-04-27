@@ -20,16 +20,130 @@ function getNextSundayText() {
   return new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).format(nextSunday)
 }
 
-function getNextServiceDate(serviceDay: string): string {
-  const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday']
-  const target = days.indexOf(serviceDay.toLowerCase())
-  if (target === -1) return ''
-  const today = new Date()
-  const current = today.getDay()
-  const diff = ((target - current + 7) % 7) || 7
-  const next = new Date(today)
-  next.setDate(today.getDate() + diff)
-  return new Intl.DateTimeFormat('en-AU', { weekday: 'long', day: 'numeric', month: 'long' }).format(next)
+/**
+ * Deduplicates and merges verse references.
+ * - Exact duplicates (case-insensitive) are collapsed to one.
+ * - Overlapping or adjacent same-book ranges are merged when they are either
+ *   within the same chapter (e.g. "John 1:1-7" + "John 1:5-10" → "John 1:1-10")
+ *   or whole-chapter references/ranges across adjacent chapters
+ *   (e.g. "John 3" + "John 4" → "John 3-4").
+ * References that can't be parsed are deduplicated by case-insensitive match.
+ */
+function normalizeAndMergeVerses(inputs: string[]): string[] {
+  // Encode a (chapter, verse) position as a single integer for range comparison.
+  // Whole-chapter sentinels use verse=0 (start) and verse=99999 (end).
+  const encode = (ch: number, v: number) => ch * 100000 + v
+  const decodeCh = (pos: number) => Math.floor(pos / 100000)
+  const decodeV  = (pos: number) => pos % 100000
+
+  const parseRef = (ref: string): { book: string; bookKey: string; lo: number; hi: number } | null => {
+    const s = ref.trim()
+    // "Book Chapter:Verse[-Verse]"
+    const mVerse = s.match(/^((?:\d\s+)?(?:[A-Za-z]+\s+)*[A-Za-z]+)\s+(\d+):(\d+)(?:-(\d+))?$/i)
+    if (mVerse) {
+      const ch = parseInt(mVerse[2]), v1 = parseInt(mVerse[3]), v2 = mVerse[4] ? parseInt(mVerse[4]) : v1
+      if (v2 < v1) return null
+      return { book: mVerse[1].trim(), bookKey: mVerse[1].trim().toLowerCase(), lo: encode(ch, v1), hi: encode(ch, v2) }
+    }
+    // "Book Chapter-Chapter" — multi-chapter range
+    const mMulti = s.match(/^((?:\d\s+)?(?:[A-Za-z]+\s+)*[A-Za-z]+)\s+(\d+)-(\d+)$/i)
+    if (mMulti) {
+      const ch1 = parseInt(mMulti[2]), ch2 = parseInt(mMulti[3])
+      if (ch2 < ch1) return null
+      return { book: mMulti[1].trim(), bookKey: mMulti[1].trim().toLowerCase(), lo: encode(ch1, 0), hi: encode(ch2, 99999) }
+    }
+    // "Book Chapter" — whole single chapter
+    const mCh = s.match(/^((?:\d\s+)?(?:[A-Za-z]+\s+)*[A-Za-z]+)\s+(\d+)$/i)
+    if (mCh) {
+      const ch = parseInt(mCh[2])
+      return { book: mCh[1].trim(), bookKey: mCh[1].trim().toLowerCase(), lo: encode(ch, 0), hi: encode(ch, 99999) }
+    }
+    return null
+  }
+
+  const toRef = (book: string, lo: number, hi: number): string => {
+    const ch1 = decodeCh(lo), v1 = decodeV(lo), ch2 = decodeCh(hi), v2 = decodeV(hi)
+    const wholeCh1 = v1 === 0, wholeCh2 = v2 === 99999
+    if (wholeCh1 && wholeCh2) {
+      return ch1 === ch2 ? `${book} ${ch1}` : `${book} ${ch1}-${ch2}`
+    }
+    if (ch1 === ch2) {
+      return v1 === v2 ? `${book} ${ch1}:${v1}` : `${book} ${ch1}:${v1}-${v2}`
+    }
+    // Cross-chapter verse range — rare but render explicitly
+    return `${book} ${ch1}:${v1}-${ch2}:${v2}`
+  }
+
+  type Entry = { book: string; bookKey: string; lo: number; hi: number; order: number }
+  const byBook = new Map<string, Entry[]>()
+  const unparseable: { value: string; order: number }[] = []
+
+  // Expand comma-separated verses: "John 3:16,18" → ["John 3:16", "John 3:18"]
+  const expandCommas = (ref: string): string[] => {
+    const m = ref.trim().match(/^((?:\d\s+)?(?:[A-Za-z]+\s+)*[A-Za-z]+\s+\d+):(.+)$/i)
+    if (m && m[2].includes(',')) {
+      return m[2].split(',').map(part => `${m[1]}:${part.trim()}`)
+    }
+    return [ref.trim()]
+  }
+
+  inputs.forEach((v, i) => {
+    let anyParsed = false
+    const expandedParts = expandCommas(v)
+    const failedExpanded: string[] = []
+
+    for (const expanded of expandedParts) {
+      const p = parseRef(expanded)
+      if (p) {
+        const key = p.bookKey
+        if (!byBook.has(key)) byBook.set(key, [])
+        byBook.get(key)!.push({ ...p, order: i })
+        anyParsed = true
+      } else {
+        failedExpanded.push(expanded.trim())
+      }
+    }
+
+    if (!anyParsed) {
+      unparseable.push({ value: v.trim(), order: i })
+    } else if (failedExpanded.length > 0) {
+      for (const failed of failedExpanded) {
+        unparseable.push({ value: failed, order: i })
+      }
+    }
+  })
+
+  const merged: { ref: string; order: number }[] = []
+  for (const items of byBook.values()) {
+    const sorted = [...items].sort((a, b) => a.lo - b.lo || a.hi - b.hi)
+    const minOrder = Math.min(...items.map(i => i.order))
+    const { book } = sorted[0]
+    const ranges: { lo: number; hi: number }[] = []
+    for (const { lo, hi } of sorted) {
+      if (ranges.length === 0 || lo > ranges[ranges.length - 1].hi + 1) {
+        ranges.push({ lo, hi })
+      } else {
+        ranges[ranges.length - 1].hi = Math.max(ranges[ranges.length - 1].hi, hi)
+      }
+    }
+    for (const r of ranges) {
+      merged.push({ ref: toRef(book, r.lo, r.hi), order: minOrder })
+    }
+  }
+
+  const seenUnparseable = new Set<string>()
+  const dedupedUnparseable: { ref: string; order: number }[] = []
+  for (const item of unparseable) {
+    const key = item.value.toLowerCase()
+    if (!seenUnparseable.has(key)) {
+      seenUnparseable.add(key)
+      dedupedUnparseable.push({ ref: item.value, order: item.order })
+    }
+  }
+
+  return [...merged, ...dedupedUnparseable]
+    .sort((a, b) => a.order - b.order)
+    .map(a => a.ref)
 }
 
 export default function Home() {
@@ -64,6 +178,9 @@ export default function Home() {
   const [themeFeedback, setThemeFeedback] = useState('')
   const [weather, setWeather] = useState('')
   const weatherFetchedRef = useRef(false)
+  const shownSongTitlesRef = useRef<Set<string>>(new Set())
+  const shownActivityTitlesRef = useRef<Set<string>>(new Set())
+  const shownQuestionsRef = useRef<Set<string>>(new Set())
   const [loginUsername, setLoginUsername] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
   const [loginChurchId, setLoginChurchId] = useState('')
@@ -146,8 +263,9 @@ export default function Home() {
 
   // Collect verses and go to review (no API call here)
   const handleVerseSubmit = async () => {
-    const collected = [verse1, verse2, verse3].map(v => v.trim()).filter(Boolean)
-    if (collected.length === 0) return
+    const raw = [verse1, verse2, verse3].map(v => v.trim()).filter(Boolean)
+    if (raw.length === 0) return
+    const collected = normalizeAndMergeVerses(raw)
     setVerses(collected)
 
     // Fetch full verse texts from server-side proxy
@@ -198,13 +316,15 @@ export default function Home() {
     setStep('login')
   }
 
-  const logoutButton = userType !== null ? (
-    <button
-      onClick={handleLogout}
-      className="fixed top-3 right-4 z-50 text-xs text-slate-400 hover:text-slate-700 underline underline-offset-2"
-    >
-      Log out
-    </button>
+  const logoutButton = userType === 'advanced' ? (
+    <div className="flex justify-center pt-6 pb-4">
+      <button
+        onClick={handleLogout}
+        className="text-xs text-slate-400 hover:text-slate-700 underline underline-offset-2"
+      >
+        Log out
+      </button>
+    </div>
   ) : null
 
   const handleStartNewVerses = () => {
@@ -313,11 +433,17 @@ export default function Home() {
       const response = await fetch('/api/discussion', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ theme: selectedTheme.title, verses }),
+        body: JSON.stringify({
+          theme: selectedTheme.title,
+          verses,
+          excludedQuestions: Array.from(shownQuestionsRef.current),
+        }),
       })
       if (response.ok) {
         const data = await response.json()
-        setDiscussionQuestions(data.questions || [])
+        const qs: string[] = data.questions || []
+        setDiscussionQuestions(qs)
+        for (const q of qs) shownQuestionsRef.current.add(q)
       }
     } catch (e) {
       console.error('Discussion questions failed', e)
@@ -520,6 +646,9 @@ export default function Home() {
         }
       })
       setActivities(finalActivities)
+      for (const a of finalActivities) {
+        if (a.title) shownActivityTitlesRef.current.add(a.title)
+      }
     } catch (error) {
       console.error('Error generating activities:', error)
     } finally {
@@ -535,7 +664,11 @@ export default function Home() {
       const response = await fetch('/api/songs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ theme: selectedTheme.title, userId: (loginChurchId || loginUsername || 'CBC') }),
+        body: JSON.stringify({
+          theme: selectedTheme.title,
+          userId: (loginChurchId || loginUsername || 'CBC'),
+          excludedTitles: Array.from(shownSongTitlesRef.current),
+        }),
       })
       const data = await response.json()
       const rec = data.recommended || []
@@ -573,6 +706,11 @@ export default function Home() {
 
       const normalizedAdditional = rawAdditional.map((s: any, i: number) => normalize(s, i))
       setSongs(normalizedAdditional)
+
+      // Accumulate shown titles so future regenerations can exclude them
+      for (const s of [...normalizedRecommended, ...normalizedAdditional]) {
+        if (s.title) shownSongTitlesRef.current.add(s.title)
+      }
     } catch (error) {
       console.error('Error generating songs:', error)
     } finally {
@@ -739,7 +877,6 @@ export default function Home() {
   if (step === 'verse') {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
-        {logoutButton}
         <div className="max-w-2xl w-full space-y-6">
           <Card className="w-full bg-white text-slate-950">
             <CardHeader>
@@ -792,6 +929,7 @@ export default function Home() {
               </div>
             </CardContent>
           </Card>
+          {logoutButton}
         </div>
       </div>
     )
@@ -800,7 +938,6 @@ export default function Home() {
   if (step === 'verseReview') {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
-        {logoutButton}
         <div className="max-w-2xl w-full">
           <Card>
             <CardHeader>
@@ -843,6 +980,7 @@ export default function Home() {
               </div>
             </CardContent>
           </Card>
+          {logoutButton}
         </div>
       </div>
     )
@@ -851,7 +989,6 @@ export default function Home() {
   if (step === 'themeContext') {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
-        {logoutButton}
         <div className="max-w-2xl w-full">
           <Card>
             <CardHeader>
@@ -879,6 +1016,7 @@ export default function Home() {
               </div>
             </CardContent>
           </Card>
+          {logoutButton}
         </div>
       </div>
     )
@@ -887,7 +1025,6 @@ export default function Home() {
   if (step === 'themes') {
     return (
       <div className="min-h-screen bg-white p-4">
-        {logoutButton}
         <div className="max-w-4xl mx-auto">
           <div className="mb-8">
             <div className="mb-4">
@@ -965,8 +1102,8 @@ export default function Home() {
   if (step === 'choice') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-        {logoutButton}
-        <Card className="max-w-2xl w-full">
+        <div className="max-w-2xl w-full">
+        <Card className="w-full">
           <CardHeader className="text-center">
             <CardTitle className="text-2xl font-bold text-slate-950">What would you like to plan?</CardTitle>
             <CardDescription>
@@ -1026,6 +1163,8 @@ export default function Home() {
             </div>
           </CardContent>
         </Card>
+        {logoutButton}
+        </div>
       </div>
     )
   }
@@ -1118,7 +1257,6 @@ export default function Home() {
 
     return (
       <div className="min-h-screen bg-white p-4">
-        {logoutButton}
         <div className="max-w-5xl mx-auto space-y-8">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
@@ -1193,7 +1331,7 @@ export default function Home() {
                           const response = await fetch('/api/activities', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ theme: selectedTheme?.title, verses, groupSize: parseInt(groupSize || '0', 10), ageRange, weather }),
+                            body: JSON.stringify({ theme: selectedTheme?.title, verses, groupSize: parseInt(groupSize || '0', 10), ageRange, weather, excludedTitles: Array.from(shownActivityTitlesRef.current) }),
                           })
                           if (response.ok) {
                             const json = await response.json()
@@ -1203,6 +1341,7 @@ export default function Home() {
                               const take = newGames.slice(0, 4).map((a: Activity, i: number) => ({ ...a, id: a.id || `game-refreshed-${i+1}`, expanded: false }))
                               return [...take, ...kept]
                             })
+                            for (const a of newGames) { if (a.title) shownActivityTitlesRef.current.add(a.title) }
                           }
                         } catch (e) {
                           console.error('Refresh games failed', e)
@@ -1322,7 +1461,7 @@ export default function Home() {
                         const response = await fetch('/api/activities', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ theme: selectedTheme?.title, verses, groupSize: parseInt(groupSize || '0', 10), ageRange, weather }),
+                          body: JSON.stringify({ theme: selectedTheme?.title, verses, groupSize: parseInt(groupSize || '0', 10), ageRange, weather, excludedTitles: Array.from(shownActivityTitlesRef.current) }),
                         })
                         if (response.ok) {
                           const json = await response.json()
@@ -1332,6 +1471,7 @@ export default function Home() {
                             const take = newCrafts.slice(0, 4).map((a: Activity, i: number) => ({ ...a, id: a.id || `craft-refreshed-${i+1}`, expanded: false }))
                             return [...kept, ...take]
                           })
+                          for (const a of newCrafts) { if (a.title) shownActivityTitlesRef.current.add(a.title) }
                         }
                       } catch (e) {
                         console.error('Refresh crafts failed', e)
@@ -1421,7 +1561,7 @@ export default function Home() {
                           const response = await fetch('/api/activities', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ theme: selectedTheme?.title, verses, groupSize: parseInt(groupSize || '0', 10), ageRange, weather }),
+                            body: JSON.stringify({ theme: selectedTheme?.title, verses, groupSize: parseInt(groupSize || '0', 10), ageRange, weather, excludedTitles: Array.from(shownActivityTitlesRef.current) }),
                           })
                           if (response.ok) {
                             const json = await response.json()
@@ -1431,6 +1571,7 @@ export default function Home() {
                               const take = newSongs.slice(0, 2).map((a: Activity, i: number) => ({ ...a, id: a.id || `song-refreshed-${i+1}`, expanded: false }))
                               return [...kept, ...take]
                             })
+                            for (const a of newSongs) { if (a.title) shownActivityTitlesRef.current.add(a.title) }
                           }
                         } catch (e) {
                           console.error('Refresh song failed', e)
@@ -1506,6 +1647,7 @@ export default function Home() {
             </div>
           )}
         </div>
+        {logoutButton}
       </div>
     )
   }
@@ -1513,7 +1655,6 @@ export default function Home() {
   if (step === 'youthDiscussion') {
     return (
       <div className="min-h-screen bg-white p-4">
-        {logoutButton}
         <div className="max-w-3xl mx-auto space-y-8">
           <div>
             <h1 className="text-3xl font-bold text-slate-950">Youth Group Discussion</h1>
@@ -1604,6 +1745,7 @@ export default function Home() {
             </div>
           )}
         </div>
+        {logoutButton}
       </div>
     )
   }
@@ -1611,7 +1753,6 @@ export default function Home() {
   if (step === 'songs') {
     return (
       <div className="min-h-screen bg-white p-4 text-slate-950">
-        {logoutButton}
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-slate-950 mb-2">Worship Songs</h1>
@@ -1692,6 +1833,7 @@ export default function Home() {
                     setRecommendedFamiliar([])
                     setSongs([])
                     setSongsRegenCount(c => c + 1)
+                    // Keep shownSongTitlesRef intact so the API excludes all previously shown songs
                     setSongsCooldown(true)
                     setTimeout(() => setSongsCooldown(false), COOLDOWN_MS)
                     await handleSongsGenerate()
@@ -1738,6 +1880,7 @@ export default function Home() {
           </div>
 
         </div>
+        {logoutButton}
       </div>
     )
   }
@@ -2251,7 +2394,7 @@ export default function Home() {
                   <div className="space-y-1">
                     <div className="text-lg font-semibold text-white">{church.name}</div>
                     <div className="text-slate-400 text-sm">{church.location}</div>
-                    <div className="text-slate-500 text-xs">Submitted: {new Date(church.created_at).toLocaleString()}</div>
+                    <div className="text-slate-500 text-xs">Submitted: {church.createdAt ? new Date(church.createdAt).toLocaleString() : 'Unknown'}</div>
                   </div>
 
                   {church.contactEmail && (

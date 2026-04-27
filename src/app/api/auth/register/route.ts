@@ -8,6 +8,7 @@ function decryptInviteKey(encrypted: string): string {
   const secret = process.env.INVITE_KEY_SECRET
   if (!secret) throw new Error('INVITE_KEY_SECRET not configured')
   const keyBuffer = Buffer.from(secret, 'hex')
+  if (keyBuffer.length !== 32) throw new Error('INVITE_KEY_SECRET must be a 64-character hex string (32 bytes)')
   const parts = encrypted.split(':')
   if (parts.length !== 3) throw new Error('Invalid encrypted key format')
   const iv = Buffer.from(parts[0], 'hex')
@@ -118,13 +119,14 @@ export async function POST(request: Request) {
     }
 
     // Notify superadmin
+    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     await sendAdminNotification(
       `New user registered: ${normalUser}`,
       `<p>A new user has registered.</p>
        <ul>
-         <li><strong>Username:</strong> ${normalUser}</li>
-         <li><strong>Email:</strong> ${normalEmail}</li>
-         <li><strong>Church:</strong> ${(church as any).name || normalChurch} (${normalChurch})</li>
+         <li><strong>Username:</strong> ${esc(normalUser)}</li>
+         <li><strong>Email:</strong> ${esc(normalEmail)}</li>
+         <li><strong>Church:</strong> ${esc((church as any).name || normalChurch)} (${esc(normalChurch)})</li>
        </ul>`
     )
 

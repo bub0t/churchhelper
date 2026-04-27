@@ -61,6 +61,10 @@ export async function POST(request: Request) {
     const normalEmail = contactEmail.trim().toLowerCase()
     const churchSlug = slugify(churchName)
 
+    if (!churchSlug) {
+      return NextResponse.json({ ok: false, error: 'Church name must contain at least one ASCII letter (A-Z) or number (0-9)' }, { status: 400 })
+    }
+
     const { data: existingChurch } = await supabase
       .from('churches')
       .select('id')

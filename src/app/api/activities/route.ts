@@ -11,6 +11,10 @@ export async function POST(request: Request) {
   const ageRange = body?.ageRange || ''
   const weather = body?.weather || 'Sunny and mild'
 
-  const activities = await aiGenerateActivities(theme || '', verse || '', Number(groupSize) || 0, ageRange || '', weather || 'Sunny and mild')
+  const excludedTitles: string[] = Array.isArray(body?.excludedTitles)
+    ? body.excludedTitles.map((t: unknown) => (typeof t === 'string' ? t : '')).filter(Boolean)
+    : []
+
+  const activities = await aiGenerateActivities(theme || '', verse || '', Number(groupSize) || 0, ageRange || '', weather || 'Sunny and mild', excludedTitles)
   return NextResponse.json({ activities })
 }

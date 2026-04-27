@@ -10,7 +10,8 @@ async function getChurchSongsFromDb(churchId: string): Promise<{ title: string; 
     .from('church_songs')
     .select('songs(title, artist, tempo, is_hymn)')
     .eq('church_id', churchId)
-  if (error || !data || data.length === 0) return null
+  if (error) return null
+  if (!data || data.length === 0) return []
   return (data as any[]).map(r => ({
     title: r.songs.title,
     artist: r.songs.artist,
@@ -23,13 +24,18 @@ export async function POST(request: Request) {
   try {
     const body = await request.json()
     const theme = body?.theme || ''
-    const userId = typeof body?.userId === 'string' ? body.userId : 'CBC'
+    const rawUserId = typeof body?.userId === 'string' ? body.userId : 'CBC'
+    const churchId = rawUserId.toLowerCase()
+    const excludedTitles: string[] = Array.isArray(body?.excludedTitles)
+      ? body.excludedTitles.map((t: unknown) => (typeof t === 'string' ? t.toLowerCase() : '')).filter(Boolean)
+      : []
 
     // Prefer Supabase as source of truth for church songs so newly added songs are included
-    const dbSongs = await getChurchSongsFromDb(userId)
-    const churchSongs: string[] = dbSongs
+    // null = Supabase unavailable (fall back to local data); [] = church exists but has no songs yet
+    const dbSongs = await getChurchSongsFromDb(churchId)
+    const churchSongs: string[] = dbSongs !== null
       ? dbSongs.map(s => s.title)
-      : (USERS[userId as keyof typeof USERS]?.songs || USERS['CBC'].songs || [])
+      : (USERS[churchId.toUpperCase() as keyof typeof USERS]?.songs || USERS['CBC'].songs || [])
 
     // Build a metadata map from DB results (merged with local SONG_METADATA)
     const dbMeta: Record<string, { artist?: string; tempo?: string; isHymn?: boolean }> = {}
@@ -38,10 +44,21 @@ export async function POST(request: Request) {
     }
     const getMeta = (title: string) => (SONG_METADATA as any)[title] || dbMeta[title] || {}
 
+    // No songs in this church's repertoire — nothing to recommend
+    if (churchSongs.length === 0) {
+      return NextResponse.json({ recommended: [], additional: [] })
+    }
+
     // Use embeddings-based prefilter — returns titles from church_songs in Supabase
-    const top = await getTopKSongsByTheme(theme || '', Math.min(20, churchSongs.length), userId || 'CBC')
+    const top = await getTopKSongsByTheme(theme || '', Math.min(20, churchSongs.length), churchId)
     // top already comes from Supabase church_songs, so no need to re-filter against hardcoded list
-    const candidates = top.length > 0 ? top : churchSongs.slice(0, 20)
+    const allCandidates = top.length > 0 ? top : churchSongs.slice(0, 20)
+    // Exclude previously shown songs so regeneration produces fresh results; fall back to
+    // allCandidates when exclusions would otherwise leave an empty pool (e.g. after many regenerations)
+    const filtered = excludedTitles.length > 0
+      ? allCandidates.filter(t => !excludedTitles.includes(t.toLowerCase()))
+      : allCandidates
+    const candidates = filtered.length > 0 ? filtered : allCandidates
 
     const result = await aiGenerateSongs(theme || '', candidates)
 
