@@ -44,14 +44,21 @@ export async function POST(request: Request) {
     }
     const getMeta = (title: string) => (SONG_METADATA as any)[title] || dbMeta[title] || {}
 
+    // No songs in this church's repertoire — nothing to recommend
+    if (churchSongs.length === 0) {
+      return NextResponse.json({ recommended: [], additional: [] })
+    }
+
     // Use embeddings-based prefilter — returns titles from church_songs in Supabase
     const top = await getTopKSongsByTheme(theme || '', Math.min(20, churchSongs.length), churchId)
     // top already comes from Supabase church_songs, so no need to re-filter against hardcoded list
     const allCandidates = top.length > 0 ? top : churchSongs.slice(0, 20)
-    // Exclude previously shown songs so regeneration produces fresh results
-    const candidates = excludedTitles.length > 0
+    // Exclude previously shown songs so regeneration produces fresh results; fall back to
+    // allCandidates when exclusions would otherwise leave an empty pool (e.g. after many regenerations)
+    const filtered = excludedTitles.length > 0
       ? allCandidates.filter(t => !excludedTitles.includes(t.toLowerCase()))
       : allCandidates
+    const candidates = filtered.length > 0 ? filtered : allCandidates
 
     const result = await aiGenerateSongs(theme || '', candidates)
 
