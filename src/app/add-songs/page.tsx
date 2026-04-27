@@ -34,9 +34,9 @@ export default function AddSongsPage() {
   return (
     <div className="min-h-screen bg-white p-6 text-slate-950">
       <div className="max-w-3xl mx-auto space-y-6">
-        <div className="text-center">
+        <div>
           <h1 className="text-3xl font-bold">Add More Songs to Database</h1>
-          <p className="text-slate-600">The app will suggest songs that are familiar to the congregation. Enter one song title per line.</p>
+          <p className="text-slate-600">Keep your song database up to date so the app can recommend worship songs your congregation already knows and loves. The more songs you add, the better the suggestions will match your church&apos;s style and repertoire — making it easier to plan a cohesive service around your theme.</p>
         </div>
 
         <Card>
@@ -74,6 +74,15 @@ export default function AddSongsPage() {
             <Button onClick={() => router.push('/')} className="border border-slate-300 bg-white text-slate-950 shadow-sm">Youth Group Discussion</Button>
           </div>
         </section>
+
+        <div className="flex justify-center pt-2 pb-4">
+          <button
+            onClick={() => router.push('/')}
+            className="text-xs text-slate-400 hover:text-slate-700 underline underline-offset-2"
+          >
+            Log out
+          </button>
+        </div>
       </div>
     </div>
   )
